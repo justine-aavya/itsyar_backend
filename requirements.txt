@@ -1,20 +1,9 @@
-version: '3.8'
-
-services:
-  db:
-    image: postgres:16-alpine
-    container_name: itsyar-postgres
-    environment:
-      POSTGRES_USER: itsyar
-      POSTGRES_PASSWORD: itsyar_secret
-      POSTGRES_DB: itsyar_db
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-volumes:
-  postgres_data:
-=======
-
-
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+sqlalchemy==2.0.30
+psycopg[binary]==3.3.4
+bcrypt==4.2.0
+python-jose[cryptography]==3.3.0
+python-dotenv==1.0.1
+pydantic-settings==2.3.0
+pydantic[email]==2.7.0
