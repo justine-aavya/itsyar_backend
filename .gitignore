@@ -1,21 +1,25 @@
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 
-# Environment
-.env
+# Local Virtual Environments
 venv/
 .venv/
+env/
+ENV/
 
-# VS Code
+# Configuration and Secret Matrices
+.env
+.env.local
+.env.*.local
+
+# Local Database Engines & Logs
+*.db
+*.sqlite3
+*.log
+
+# Editor IDE Metadata configurations
 .vscode/
-
-# Pytest
-.pytest_cache/
-
-# Build
-build/
-dist/
-
-# Mac/Linux
+.idea/
 .DS_Store

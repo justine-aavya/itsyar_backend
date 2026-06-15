@@ -1,1 +1,4 @@
-# SQLAlchemy base will be defined here
+from sqlalchemy.orm import DeclarativeBase
+
+class Base(DeclarativeBase):
+    pass
