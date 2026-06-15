@@ -1,4 +1,5 @@
 version: '3.8'
+<<<<<<< HEAD
 
 services:
   db:
@@ -15,4 +16,21 @@ services:
 
 volumes:
   postgres_data:
+=======
+>>>>>>> 428f633a77d4ff70434dffa8468b164e8a99e957
 
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: itsyar-postgres
+    environment:
+      POSTGRES_USER: itsyar
+      POSTGRES_PASSWORD: itsyar_secret
+      POSTGRES_DB: itsyar_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

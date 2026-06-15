@@ -7,4 +7,7 @@ python-jose[cryptography]==3.3.0
 python-dotenv==1.0.1
 pydantic-settings==2.3.0
 pydantic[email]==2.7.0
+<<<<<<< HEAD
 
+=======
+>>>>>>> 428f633a77d4ff70434dffa8468b164e8a99e957
