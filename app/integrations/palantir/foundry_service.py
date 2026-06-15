@@ -16,28 +16,26 @@ def get_all_events(status_filter: Optional[str] = None) -> List[Dict[str, Any]]:
         client = foundry_osdk.get_client()
         osdk_events = client.ontology.objects.VanyarEvent.page(page_size=100)
         
-        response = client.api.v2.ontologies.Ontology.Object.list(
-            ontology_rid=foundry_osdk.ontology_rid,
-            object_type_api_name="VanyarEvent"  
-        )
+        # response = client.api.v2.ontologies.Ontology.Object.list(
+        #     ontology_rid=foundry_osdk.ontology_rid,
+        #     object_type_api_name="VanyarEvent"  
+        # )
         
         # Parse the incoming page entries
         events_list = []
-        for obj in response.data:
-            # Platform SDK packs properties inside an explicit dictionary map
-            props = obj.properties
+        for obj in osdk_events:
+            # Safely extract properties dictionary out of the OSDK data record node
+            props = getattr(obj, "properties", obj)
             events_list.append({
-                "id": props.get("eventid") or obj.primary_key.get("eventid"),
-                "title": props.get("name"),
-                "description": props.get("description", ""),
-                "status": props.get("status"),
-                "startDate": props.get("startDate"),
-                "endDate": props.get("endDate"),
-                "eventType": props.get("event", "General"),
-                "orgId": props.get("orgId", "default-org"),
-                "Created At":props.get("createdAt"),
-                "Created By":props.get("createdBy")
+                "userId": props.get("userId") or getattr(obj, "primary_key", {}).get("userId") or str(getattr(obj, "id", "")),
+                "name": props.get("name", "Unnamed User"),
+                "role": props.get("role", "Student"),
+                "email": props.get("email", "")
             })
+        
+        if status_filter:
+            requested_statuses = [s.strip().upper() for s in status_filter.split(",")]
+            return [e for e in events_list if str(e.get("role")).upper() in requested_statuses]
             
         return events_list if events_list else get_mock_events()
         
@@ -134,3 +132,4 @@ def get_top_leaderboard(limit: int = 4) -> list:
         {"rank": 3, "name": "Clara Vance", "pts": "1,980"},
         {"rank": 4, "name": "Marcus Wright", "pts": "1,850"}
     ][:limit]
+
