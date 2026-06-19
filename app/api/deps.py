@@ -1,3 +1,4 @@
+
 import uuid
 from typing import List
 from fastapi import Depends, HTTPException, status
@@ -12,7 +13,7 @@ from app.models.user import User
 security_scheme = HTTPBearer()
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security_scheme), 
+    credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
     db: Session = Depends(get_db)
 ) -> User:
     credentials_exception = HTTPException(
@@ -20,9 +21,8 @@ async def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
     token = credentials.credentials
-    
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id: str = payload.get("sub")
@@ -43,7 +43,7 @@ async def get_current_user(
     user = db.query(User).filter(User.id == target_id).first()
     if user is None:
         raise credentials_exception
-        
+    
     return user
 
 def require_role(allowed_roles: List[str]):
