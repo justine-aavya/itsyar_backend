@@ -1,217 +1,201 @@
-Here's your `README.md`:
+## `README.md`
 
 ```markdown
 # ItsYar Backend
 
-Enterprise learning platform backend built with FastAPI, PostgreSQL, and Palantir Foundry OSDK.
+Backend API for the ItsYar Learning & Hackathon Platform — built with FastAPI, PostgreSQL, and Palantir Foundry OSDK.
+
+## Architecture
+
+```
+┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│   React UI  │ ──► │  FastAPI Backend  │ ──► │ Palantir Foundry │
+│  (Frontend) │     │   (This Repo)    │     │     (OSDK)       │
+└─────────────┘     └──────────────────┘     └─────────────────┘
+                            │
+                            ▼
+                    ┌──────────────┐
+                    │  PostgreSQL  │
+                    │  (Auth Only) │
+                    └──────────────┘
+```
+
+- **Auth (JWT)** → PostgreSQL
+- **Data (Courses, Events, Hackathons)** → Palantir Foundry OSDK
 
 ## Tech Stack
 
-- **Framework:** FastAPI (Python 3.12)
-- **Database:** PostgreSQL (authentication)
-- **Data Platform:** Palantir Foundry OSDK (courses, events, quizzes)
-- **Auth:** JWT (access + refresh tokens)
+| Layer | Technology |
+|-------|-----------|
+| Framework | FastAPI (Python) |
+| Auth | JWT (python-jose) + bcrypt |
+| Database | PostgreSQL (SQLAlchemy ORM) |
+| Data Platform | Palantir Foundry (OSDK) |
+| SDK | `training_and_hackathon_sdk` |
 
-## Quick Start
+## API Endpoints
+
+### Auth (`/api/auth`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/signup` | Create account + auto-login |
+| POST | `/login` | Authenticate user |
+| POST | `/refresh-token` | Refresh access token |
+| POST | `/forgot-password` | Request password reset |
+| POST | `/reset-password` | Reset password with token |
+| GET | `/me` | Get current user profile |
+
+### Courses (`/api/courses`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/look` | Browse/search course catalog |
+| GET | `/my` | User's enrolled courses |
+| GET | `/{id}` | Course detail |
+| POST | `/{id}/enroll` | Enroll in course |
+| GET | `/{id}/modules` | Full curriculum (modules → lessons) |
+| GET | `/{id}/modules/{mid}/content` | Lesson content (video + PDF) |
+| GET | `/{id}/modules/{mid}/quiz` | Quiz questions |
+| POST | `/{id}/modules/{mid}/quiz/submit` | Submit quiz + auto-grade |
+| GET | `/{id}/pdf` | Stream PDF from Foundry |
+| GET | `/{id}/progress` | Enrollment progress |
+
+### Events & Hackathons (`/api/events`)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | List all events |
+| GET | `/{id}` | Event detail |
+| POST | `/{id}/register` | Register for event |
+
+## Setup
+
+### Prerequisites
+- Python 3.10+
+- PostgreSQL
+- Palantir Foundry access (Client ID + Secret)
+
+### Installation
 
 ```bash
-# 1. Clone
+# Clone
 git clone https://github.com/YOUR_USERNAME/itsyar_backend.git
 cd itsyar_backend
 
-# 2. Create virtual environment
+# Virtual environment
 python -m venv venv
 venv\Scripts\activate  # Windows
 # source venv/bin/activate  # Mac/Linux
 
-# 3. Install dependencies
+# Install dependencies
 pip install -r requirements.txt
 
-# 4. Install Foundry SDK (requires token)
-$env:FOUNDRY_TOKEN="your_token_here"
-pip install training_and_hackathon_sdk==0.10.0 --no-deps `
-  --index-url "https://user:$env:FOUNDRY_TOKEN@aavya.palantirfoundry.com/artifacts/api/repositories/ri.artifacts.main.repository.ade321f2-0f3d-4957-b97c-1da091e5bd2e/contents/release/pypi/simple"
-
-# 5. Setup .env file (see Environment Variables below)
-
-# 6. Run server
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# Install Foundry SDK
+$env:FOUNDRY_TOKEN="your-token-here"
+pip install training_and_hackathon_sdk==0.12.0 --upgrade `
+  --index-url "https://user:$env:FOUNDRY_TOKEN@aavya.palantirfoundry.com/artifacts/api/repositories/ri.artifacts.main.repository.ade321f2-0f3d-4957-b97c-1da091e5bd2e/contents/release/pypi/simple" `
+  --extra-index-url "https://user:$env:FOUNDRY_TOKEN@aavya.palantirfoundry.com/artifacts/api/repositories/ri.foundry-sdk-asset-bundle.main.artifacts.repository/contents/release/pypi/simple"
 ```
 
-## Environment Variables
+### Environment Variables
 
-Create a `.env` file in the root:
+Create a `.env` file:
 
 ```env
-# PostgreSQL
+# Database
 DATABASE_URL=postgresql://user:password@localhost:5432/itsyar
 
-# JWT
+# Auth
 SECRET_KEY=your-secret-key
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 
 # Palantir Foundry
 FOUNDRY_URL=https://aavya.palantirfoundry.com
-FOUNDRY_CLIENT_ID=your_client_id
-FOUNDRY_CLIENT_SECRET=your_client_secret
-FOUNDRY_ONTOLOGY_RID=your_ontology_rid
+FOUNDRY_CLIENT_ID=your-client-id
+FOUNDRY_CLIENT_SECRET=your-client-secret
+FOUNDRY_ONTOLOGY_RID=your-ontology-rid
 ```
 
-## API Documentation
+### Run
 
-Swagger UI: `http://localhost:8000/docs`
-
-## Architecture
-
-```
-PostgreSQL (Auth)          Palantir Foundry (Data)
-├── Signup                 ├── Courses
-├── Login                  ├── VanyarEnrolment
-├── Password Reset         ├── Quizes
-├── Token Refresh          ├── VanyarEvent
-└── Session Management     ├── VanyarTrack
-                           └── Hackathons (future)
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-## API Endpoints
+API docs available at: `http://localhost:8000/docs`
 
-### Auth (`/api/auth`)
+## Project Structure
 
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| POST | `/signup` | Register new user (+ sync to Foundry) |
-| POST | `/login` | Login, returns JWT tokens |
-| POST | `/refresh-token` | Refresh expired access token |
-| POST | `/forgot-password` | Request password reset |
-| POST | `/reset-password` | Reset password with token |
-| GET | `/me` | Get current user profile |
-
-### Courses (`/api/courses`)
-
-| Method | Endpoint | Purpose | Auth |
-|--------|----------|---------|------|
-| GET | `/` | List all courses | JWT |
-| GET | `/search?q=` | Search courses | JWT |
-| GET | `/my` | My enrolled courses | JWT |
-| GET | `/{course_id}` | Course detail | JWT |
-| POST | `/{course_id}/enroll` | Enroll in course | JWT |
-| GET | `/{course_id}/modules` | List modules | JWT + Enrolled |
-| GET | `/{course_id}/modules/{module_id}/content` | Video + PDF | JWT + Enrolled |
-| GET | `/{course_id}/modules/{module_id}/quiz` | Quiz questions | JWT + Enrolled |
-| POST | `/{course_id}/modules/{module_id}/quiz/submit` | Submit quiz | JWT + Enrolled |
-| GET | `/{course_id}/progress` | Completion status | JWT |
-
-### Events (`/api/foundry`)
-
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| GET | `/status` | Foundry connection check |
-| GET | `/events` | List all events |
-| GET | `/events/{id}` | Event detail |
-| POST | `/events/{id}/enrol` | Register for event |
-| GET | `/tracks` | List learning tracks |
-| GET | `/stats` | Platform statistics |
+```
+itsyar_backend/
+├── app/
+│   ├── main.py                 # FastAPI app entry point
+│   ├── api/
+│   │   ├── deps.py             # Auth dependencies
+│   │   └── router.py           # Main API router
+│   ├── core/
+│   │   ├── config.py           # Settings
+│   │   └── security.py         # JWT + hashing
+│   ├── db/
+│   │   └── session.py          # PostgreSQL connection
+│   ├── models/
+│   │   ├── user.py             # User SQLAlchemy model
+│   │   ├── auth/
+│   │   │   ├── router.py       # Auth endpoints
+│   │   │   └── schemas.py      # Auth Pydantic schemas
+│   │   └── courses/
+│   │       ├── router.py       # Course endpoints
+│   │       └── schemas.py      # Course Pydantic schemas
+│   └── integrations/
+│       └── palantir/
+│           ├── foundry_client.py   # OSDK client manager
+│           └── foundry_service.py  # Foundry data layer
+├── static/
+│   └── videos/                 # Local video files
+├── .env                        # Environment variables (DO NOT COMMIT)
+├── .gitignore
+├── requirements.txt
+└── README.md
+```
 
 ## Response Format
 
 **Success:**
 ```json
-{"success": true, "data": {...}}
+{ "success": true, "data": { ... } }
 ```
 
 **Error:**
 ```json
-{"error": {"data": {"message": "Error description"}}}
+{ "error": { "data": { "message": "Human-readable error" } } }
 ```
 
-## Authorization
+All responses use **camelCase** keys (auto-converted from snake_case via middleware).
 
-All endpoints (except login/signup) require:
-```
-Authorization: Bearer <access_token>
-```
+## License
 
-Token obtained from login/signup response: `accessToken` field.
-
-## Foundry OSDK Integration
-
-### Objects Used
-- `Courses` — Course catalog
-- `VanyarEnrolment` — Enrollment tracking
-- `Quizes` — Quiz questions + answer key
-- `VanyarEvent` — Events/hackathons
-- `VanyarUser` — User profiles (synced on signup)
-- `VanyarTrack` — Learning tracks
-
-### Actions Used
-- `create_vanyar_user` — Sync user to Foundry on signup
-- `create_enrolment` — Enroll user in course
-- `mark_complete` — Mark course as completed (after quiz pass)
-- `register_for_event` — Register for events
-
-## Quiz Grading
-
-- Answer format: Array (e.g., `["B"]` or `["B", "D"]`)
-- Passing threshold: 70%
-- On pass: automatically calls `mark_complete` action
-- Comparison: case-insensitive set matching
-
-## CamelCase Middleware
-
-All JSON responses automatically convert `snake_case` → `camelCase` for frontend compatibility. Python code stays snake_case internally.
-
-## Network Access
-
-```bash
-# Allow external access (Windows Firewall)
-New-NetFirewallRule -DisplayName "Allow Port 8000" -Direction Inbound -LocalPort 8000 -Protocol TCP -Action Allow
+Private — ItsYar Team
 ```
 
-Server accessible at: `http://<your-ip>:8000`
+---
 
-## Updating Foundry SDK
-
-```powershell
-$env:FOUNDRY_TOKEN="your_token"
-pip uninstall training_and_hackathon_sdk -y
-pip install training_and_hackathon_sdk==X.X.X --no-deps `
-  --index-url "https://user:$env:FOUNDRY_TOKEN@aavya.palantirfoundry.com/artifacts/api/repositories/ri.artifacts.main.repository.ade321f2-0f3d-4957-b97c-1da091e5bd2e/contents/release/pypi/simple"
-```
-
-## Project Structure
+## `requirements.txt`
 
 ```
-app/
-├── main.py                          # FastAPI app + middleware
-├── api/
-│   ├── router.py                    # Route registration
-│   └── deps.py                      # Auth dependencies
-├── core/
-│   ├── config.py                    # Settings
-│   └── security.py                  # JWT + password hashing
-├── db/
-│   ├── session.py                   # Database connection
-│   └── base.py                      # SQLAlchemy base
-├── models/
-│   ├── user.py                      # User SQLAlchemy model
-│   ├── auth/
-│   │   ├── router.py                # Auth endpoints
-│   │   └── schemas.py               # Auth Pydantic models
-│   └── courses/
-│       ├── router.py                # Course endpoints
-│       └── schemas.py               # Course Pydantic models
-└── integrations/
-    └── palantir/
-        ├── foundry_client.py        # OSDK connection manager
-        └── foundry_service.py       # All Foundry data operations
-```
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+sqlalchemy==2.0.31
+psycopg2-binary==2.9.9
+pydantic[email]==2.8.0
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.1.3
+python-dotenv==1.0.1
+requests==2.32.3
+python-multipart==0.0.9
 ```
 
-Save as `README.md` in your project root, then:
+> **Note:** `training_and_hackathon_sdk` is installed separately from the Foundry private registry (see Setup instructions above).
 
-```powershell
-git add README.md
-git commit -m "docs: add README"
-git push origin main
-```
+---
+
+Save these as `README.md` and `requirements.txt` in your project root (`C:\Users\justi\OneDrive\Desktop\itsyar_backend\`).
