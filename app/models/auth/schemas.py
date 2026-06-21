@@ -202,7 +202,8 @@ class SignupRequest(BaseModel):
     password: str
     confirm_password: str = Field(alias="confirmPassword")
     role: Optional[str] = Field(default="Student", alias="userType")
-    accept_terms: bool = Field(default=True, alias="acceptTerms")
+    learning_interest: Optional[LearningInterest] = Field(default=None, alias="interest")  
+    accept_terms: bool = Field(alias="acceptTerms")
 
     class Config:
         populate_by_name = True

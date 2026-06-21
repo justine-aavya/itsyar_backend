@@ -271,7 +271,7 @@ def signup(request: SignupRequest, db: Session = Depends(get_db)):
         hashed_password=hash_password(request.password),
         full_name=request.full_name,
         role=request.role,
-        learning_interest=None,
+        learning_interest=request.learning_interest.value if request.learning_interest else None,
         token_version=1
     )
     db.add(new_user)
@@ -284,7 +284,7 @@ def signup(request: SignupRequest, db: Session = Depends(get_db)):
         email=new_user.email,
         full_name=new_user.full_name,
         role=new_user.role or "Student",
-        learning_interest="",
+        learning_interest=new_user.learning_interest or "",
     )
 
     access_token = create_access_token(data={"sub": str(new_user.id), "role": new_user.role})

@@ -1,1 +1,1 @@
-VanyarUser
+VanyarEvent
