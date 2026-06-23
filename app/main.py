@@ -5,8 +5,11 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
+from fastapi import HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
 
 from app.db.session import engine
 from app.db.base import Base
@@ -17,7 +20,6 @@ from app.api.router import api_router
 from app.api.deps import get_current_user
 from app.models.user import User
 from app.models.auth.schemas import UserResponse
-
 
 Base.metadata.create_all(bind=engine)
 
@@ -112,25 +114,8 @@ def diagnostic_check():
         print(f"❌ CONNECTION FAILED: {result['message']}")
         print(f"Details: {result.get('error_details', 'N/A')}\n")
 
-
-# ═══════════════════════════════════════════════════════════════
-# MIDDLEWARE STACK (order matters: CORS first, then CamelCase)
-# ═══════════════════════════════════════════════════════════════
-
-app.add_middleware(CamelCaseMiddleware)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request, exc):
-    from fastapi.responses import JSONResponse
 
     # Get the first error message (most relevant to user)
     errors = exc.errors()
@@ -151,6 +136,27 @@ async def validation_exception_handler(request, exc):
         status_code=422,
         content={"error": {"data": {"message": friendly_message}}}
     )
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": {"data": {"message": exc.detail}}}
+    )
+
+# ═══════════════════════════════════════════════════════════════
+# MIDDLEWARE STACK (order matters: CORS first, then CamelCase)
+# ═══════════════════════════════════════════════════════════════
+
+app.add_middleware(CamelCaseMiddleware)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ═══════════════════════════════════════════════════════════════

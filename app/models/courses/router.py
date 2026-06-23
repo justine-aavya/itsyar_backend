@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends, Query, status, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import Response as RawResponse
 from typing import Optional
 import requests
 import os
@@ -228,19 +229,19 @@ def get_my_courses(
 @router.get("/video/{course_id}", status_code=status.HTTP_200_OK)
 def stream_course_video(
     course_id: str,
-    current_user: User = Depends(get_current_user),
+    #current_user: User = Depends(get_current_user),
 ):
     """Stream video from Palantir Foundry. Opens inline in browser."""
     try:
         # Role gate: only Students can access video
-        require_student_role(current_user)
+        #require_student_role(current_user)
 
         # Enrollment gate: must be enrolled
-        status_check = foundry_service.check_user_enrollment(course_id=course_id, user_id=str(current_user.id))
-        if not status_check.get("isEnrolled"):
-            return error_response(403, "You must be enrolled to access video")
+        #status_check = foundry_service.check_user_enrollment(course_id=course_id, user_id=str(current_user.id))
+        # if not status_check.get("isEnrolled"):
+        #     return error_response(403, "You must be enrolled to access video")
 
-        # Fetch video bytes from Foundry OSDK
+        # # Fetch video bytes from Foundry OSDK
         content, content_type = foundry_service.get_course_video_content(course_id)
 
         if not content:
@@ -359,7 +360,7 @@ def get_course_details(
 @router.get("/{course_id}/pdf", status_code=status.HTTP_200_OK)
 def stream_course_pdf(
     course_id: str,
-    current_user: User = Depends(get_current_user),
+    #current_user: User = Depends(get_current_user),
 ):
     """Stream PDF from Foundry. Opens inline in browser (not download)."""
     try:
@@ -369,7 +370,7 @@ def stream_course_pdf(
         if not content:
             return error_response(404, "PDF resource not found in Foundry")
 
-        from fastapi.responses import Response as RawResponse
+
         return RawResponse(
             content=content,
             media_type="application/pdf",
@@ -380,8 +381,8 @@ def stream_course_pdf(
             },
         )
 
-    except HTTPException:
-        raise
+    # except HTTPException:
+    #     raise
     except Exception as e:
         return error_response(500, f"PDF streaming failed: {str(e)}")
 

@@ -323,7 +323,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
         return error_response(401, "Invalid email or password")
 
     # Use requested role if provided, otherwise use stored role
-    assigned_role = request.role or user.role
+    assigned_role =  user.role  #request.role or
 
     # Validate that the requested role matches the stored role
     if request.role and request.role.lower() != user.role.lower():
