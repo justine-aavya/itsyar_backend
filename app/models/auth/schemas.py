@@ -201,7 +201,7 @@ class SignupRequest(BaseModel):
     email: EmailStr
     password: str
     confirm_password: str = Field(alias="confirmPassword")
-    role: Optional[str] = Field(default="Student", alias="userType")
+    role: Optional[str] = Field(default="Student", alias="role")
     learning_interest: Optional[LearningInterest] = Field(default=None, alias="interest")  
     accept_terms: bool = Field(alias="acceptTerms")
 
@@ -234,6 +234,7 @@ class SignupRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    role: Optional[str] = Field(default=None, alias="role")  # Optional: login as specific role
 
     @field_validator("email", mode="before")
     @classmethod

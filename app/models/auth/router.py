@@ -298,18 +298,44 @@ def signup(request: SignupRequest, db: Session = Depends(get_db)):
     )
 
 
+# @router.post("/login", response_model=TokenResponse)
+# def login(request: LoginRequest, db: Session = Depends(get_db)):
+#     user = db.query(User).filter(User.email == request.email).first()
+#     if not user or not user.hashed_password or not verify_password(request.password, user.hashed_password):
+#         return error_response(401, "Invalid email or password")
+
+#     expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+#     assigned_role = user.role
+
+#     access_token = create_access_token(data={"sub": str(user.id), "role": assigned_role}, expires_delta=expires)
+#     refresh_token = create_refresh_token(data={"sub": str(user.id), "type": "refresh", "version": user.token_version}, expires_delta=expires)
+
+#     response_user = UserResponse.model_validate(user)
+#     response_user.role = assigned_role
+
+#     return TokenResponse(success=True, access_token=access_token, refresh_token=refresh_token, user=response_user)
+
 @router.post("/login", response_model=TokenResponse)
 def login(request: LoginRequest, db: Session = Depends(get_db)):
+    # Find user by email
     user = db.query(User).filter(User.email == request.email).first()
     if not user or not user.hashed_password or not verify_password(request.password, user.hashed_password):
         return error_response(401, "Invalid email or password")
 
-    expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    assigned_role = user.role
+    # Use requested role if provided, otherwise use stored role
+    assigned_role = request.role or user.role
 
+    # Validate that the requested role matches the stored role
+    if request.role and request.role.lower() != user.role.lower():
+        return error_response(403, f"Your account is registered as '{user.role}'. Cannot login as '{request.role}'.")
+
+    expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+
+    # Create tokens with role included
     access_token = create_access_token(data={"sub": str(user.id), "role": assigned_role}, expires_delta=expires)
     refresh_token = create_refresh_token(data={"sub": str(user.id), "type": "refresh", "version": user.token_version}, expires_delta=expires)
 
+    # Build response with role
     response_user = UserResponse.model_validate(user)
     response_user.role = assigned_role
 

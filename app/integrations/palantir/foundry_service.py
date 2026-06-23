@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
+import urllib.parse
 
 from app.integrations.palantir.foundry_client import (
     foundry_osdk, is_foundry_configured
@@ -155,6 +156,12 @@ def flatten_osdk_object(obj) -> Dict[str, Any]:
     return data
 
 
+def _build_video_proxy_url(raw_foundry_url: str) -> str:
+    """Return the original Foundry URL for iframe embedding on frontend."""
+    return raw_foundry_url or ""
+
+
+
 
 def apply_effective_status(event_data: dict) -> dict:
     """Derive effective status from event dates."""
@@ -304,110 +311,186 @@ def get_all_tracks() -> List[Dict[str, Any]]:
         return get_mock_tracks()
 
 
-# ═══════════════════════════════════════════════════════════════
-# HACKATHONS
-# ═══════════════════════════════════════════════════════════════
+# # ═══════════════════════════════════════════════════════════════
+# # HACKATHONS
+# # ═══════════════════════════════════════════════════════════════
 
-def get_all_hackathons() -> List[Dict[str, Any]]:
-    if not is_foundry_configured():
-        return []
+# def get_all_hackathons() -> List[Dict[str, Any]]:
+#     if not is_foundry_configured():
+#         return []
 
-    try:
-        raw = _take_objects("Hackathons", 100)
-        return [flatten_osdk_object(h) for h in raw]
-    except Exception as e:
-        print(f"[FOUNDRY ERROR] Hackathons fetch failed: {str(e)}")
-        return []
+#     try:
+#         raw = _take_objects("Hackathons", 100)
+#         return [flatten_osdk_object(h) for h in raw]
+#     except Exception as e:
+#         print(f"[FOUNDRY ERROR] Hackathons fetch failed: {str(e)}")
+#         return []
 
 ######################################################################################################
 # # ═══════════════════════════════════════════════════════════════
 # # COURSES — LIST, SEARCH, DETAIL
 # # ═══════════════════════════════════════════════════════════════
 
-# def get_all_courses(
-#     offset: int = 0,
-#     limit: int = 6,
-#     category: Optional[str] = None,
-#     level: Optional[str] = None
-# ) -> Dict[str, Any]:
-#     if not is_foundry_configured():
-#         return {"courses": [], "total": 0, "offset": offset, "limit": limit}
+def get_all_courses(
+    offset: int = 0,
+    limit: int = 6,
+    category: Optional[str] = None,
+    level: Optional[str] = None
+) -> Dict[str, Any]:
+    """List all courses with pagination and optional filters."""
+    if not is_foundry_configured():
+        return {"courses": [], "total": 0, "offset": offset, "limit": limit}
 
-#     try:
-#         raw = _take_objects("Courses", 200)
-#         courses = [flatten_osdk_object(c) for c in raw]
+    try:
+        raw = _take_objects("Courses", 200)
+        courses = [flatten_osdk_object(c) for c in raw]
 
-#         if category:
-#             courses = [c for c in courses if str(c.get("category", "")).lower() == category.lower()]
-#         if level:
-#             courses = [c for c in courses if str(c.get("level", "")).lower() == level.lower()]
+        # Apply category filter
+        if category:
+            courses = [c for c in courses if str(c.get("tag", "")).lower() == category.lower()]
 
-#         total = len(courses)
-#         paginated = courses[offset:offset + limit]
-#         return {"courses": paginated, "total": total, "offset": offset, "limit": limit}
+        # Apply level filter
+        if level:
+            courses = [c for c in courses if str(c.get("level", "")).lower() == level.lower()]
 
-#     except Exception as e:
-#         print(f"[FOUNDRY ERROR] Courses fetch failed: {str(e)}")
-#         return {"courses": [], "total": 0, "offset": offset, "limit": limit}
+        # Calculate total before pagination
+        total = len(courses)
+
+        # Apply pagination
+        paginated = courses[offset:offset + limit]
+
+        # Format each course
+        formatted = []
+        for c in paginated:
+            formatted.append({
+                "id": str(c.get("course_id", c.get("id", ""))),
+                "title": c.get("title") or c.get("course_name1", "Untitled"),
+                "tag": c.get("tag", "General"),
+                "duration": c.get("duration") or c.get("duration1", "Self-paced"),
+                "instructor": c.get("instructor", "ItsYar Team"),
+                "description": c.get("description", ""),
+                "image": c.get("image", ""),
+                "badge": c.get("badge"),
+                "level": c.get("level", "Beginner"),
+            })
+
+        return {"courses": formatted, "total": total, "offset": offset, "limit": limit}
+
+    except Exception as e:
+        print(f"[FOUNDRY ERROR] Courses fetch failed: {str(e)}")
+        return {"courses": [], "total": 0, "offset": offset, "limit": limit}
 
 
-# def search_courses_catalog(query_str: str, limit: int = 10) -> Dict[str, Any]:
-#     if not is_foundry_configured():
-#         return {"results": [], "query": query_str, "count": 0}
 
-#     try:
-#         raw = _take_objects("Courses", 200)
-#         courses = [flatten_osdk_object(c) for c in raw]
+def search_courses_catalog(query_str: str, limit: int = 10) -> Dict[str, Any]:
+    """Search courses by keyword in title, name, description, or tag."""
+    if not is_foundry_configured():
+        return {"results": [], "query": query_str, "count": 0}
 
-#         q = query_str.lower()
-#         results = [
-#             c for c in courses
-#             if q in str(c.get("course_name1", "")).lower()
-#             or q in str(c.get("name", "")).lower()
-#             or q in str(c.get("title", "")).lower()
-#         ]
-#         return {"results": results[:limit], "query": query_str, "count": len(results[:limit])}
+    try:
+        raw = _take_objects("Courses", 200)
+        courses = [flatten_osdk_object(c) for c in raw]
 
-#     except Exception as e:
-#         print(f"[FOUNDRY ERROR] Course search failed: {str(e)}")
-#         return {"results": [], "query": query_str, "count": 0}
+        q = query_str.lower()
+        results = [
+            c for c in courses
+            if q in str(c.get("course_name1", "")).lower()
+            or q in str(c.get("name", "")).lower()
+            or q in str(c.get("title", "")).lower()
+            or q in str(c.get("description", "")).lower()
+            or q in str(c.get("tag", "")).lower()
+        ]
+
+        # Format results
+        formatted = []
+        for c in results[:limit]:
+            formatted.append({
+                "id": str(c.get("course_id", c.get("id", ""))),
+                "title": c.get("title") or c.get("course_name1", "Untitled"),
+                "tag": c.get("tag", "General"),
+                "duration": c.get("duration") or c.get("duration1", "Self-paced"),
+                "instructor": c.get("instructor", "ItsYar Team"),
+                "description": c.get("description", ""),
+                "image": c.get("image", ""),
+                "badge": c.get("badge"),
+                "level": c.get("level", "Beginner"),
+            })
+
+        return {"results": formatted, "query": query_str, "count": len(formatted)}
+
+    except Exception as e:
+        print(f"[FOUNDRY ERROR] Course search failed: {str(e)}")
+        return {"results": [], "query": query_str, "count": 0}
 
 
-# def get_single_course(course_id: str) -> Optional[Dict[str, Any]]:
-#     if not is_foundry_configured():
-#         return None
+def get_single_course(course_id: str) -> Optional[Dict[str, Any]]:
+    if not is_foundry_configured():
+        return None
 
-#     try:
-#         try:
-#             pk_value = int(course_id)
-#         except ValueError:
-#             pk_value = course_id
+    try:
+        try:
+            pk_value = int(course_id)
+        except ValueError:
+            pk_value = course_id
 
-#         with AllowBetaFeatures():
-#             client = foundry_osdk.get_client()
-#             if not hasattr(client.ontology.objects, "Courses"):
-#                 return None
+        with AllowBetaFeatures():
+            client = foundry_osdk.get_client()
+            if not hasattr(client.ontology.objects, "Courses"):
+                return None
 
-#             try:
-#                 raw = client.ontology.objects.Courses.get(pk_value)
-#                 return flatten_osdk_object(raw)
-#             except Exception:
-#                 pass
+            try:
+                raw = client.ontology.objects.Courses.get(pk_value)
+                return flatten_osdk_object(raw)
+            except Exception:
+                pass
 
-#             if Courses is not None:
-#                 for pk_name in ["course_id", "id", "courseId"]:
-#                     if hasattr(Courses.object_type, pk_name):
-#                         prop = getattr(Courses.object_type, pk_name)
-#                         results = client.ontology.objects.Courses.where(prop == pk_value).take(1)
-#                         if results:
-#                             return flatten_osdk_object(results[0])
-#         return None
+            if Courses is not None:
+                for pk_name in ["course_id", "id", "courseId"]:
+                    if hasattr(Courses.object_type, pk_name):
+                        prop = getattr(Courses.object_type, pk_name)
+                        results = client.ontology.objects.Courses.where(prop == pk_value).take(1)
+                        if results:
+                            return flatten_osdk_object(results[0])
+        return None
 
-#     except Exception as e:
-#         print(f"[FOUNDRY ERROR] Single course fetch failed: {str(e)}")
-#         return None
+    except Exception as e:
+        print(f"[FOUNDRY ERROR] Single course fetch failed: {str(e)}")
+        return None
 
 ####################################################################################################################333
+
+# ═══════════════════════════════════════════════════════════════
+# COURSES — VIDEO FROM FOUNDRY MEDIA
+# ═══════════════════════════════════════════════════════════════
+
+def get_course_video_content(course_id: str) -> tuple:
+    """Fetch video content from Foundry using OSDK media property."""
+    if not is_foundry_configured():
+        return (None, None)
+
+    try:
+        try:
+            pk_value = int(course_id)
+        except ValueError:
+            pk_value = course_id
+
+        with AllowBetaFeatures():
+            client = foundry_osdk.get_client()
+            course_obj = client.ontology.objects.Courses.get(pk_value)
+
+            # Read video from the 'video' media property
+            media_stream = course_obj.video.get_media_content()
+            content = media_stream.read()
+
+        return (content, "video/mp4")
+
+    except Exception as e:
+        print(f"[FOUNDRY ERROR] Video content fetch failed: {str(e)}")
+        return (None, None)
+
+
+
+########################################################################################################################
 
 # ═══════════════════════════════════════════════════════════════
 # COURSES — LOOK (COMBINED LIST + SEARCH)
@@ -523,11 +606,7 @@ def get_single_course(course_id: str) -> Optional[Dict[str, Any]]:
             return None
 
 def get_course_modules(course_id: str) -> Dict[str, Any]:
-    """
-    Get full course curriculum with modules, lessons, video URLs, and materials.
-    Currently maps 1 course = 1 module = 1 lesson (from Courses object).
-    """
-
+    """Get full course curriculum with modules, lessons, video URLs, and materials."""
     if not is_foundry_configured():
         return {"course": {"id": course_id, "title": "", "description": "", "curriculum": []}}
 
@@ -537,6 +616,7 @@ def get_course_modules(course_id: str) -> Dict[str, Any]:
             return {"course": {"id": course_id, "title": "", "description": "", "curriculum": []}}
 
         # Build materials list
+                # Build materials list
         materials = []
         if course.get("derived") or course.get("course_resources1"):
             materials.append({
@@ -544,25 +624,40 @@ def get_course_modules(course_id: str) -> Dict[str, Any]:
                 "title": "Course PDF Notes",
                 "type": "pdf",
                 "meta": "PDF Document",
+                "url": f"/api/courses/{course_id}/pdf",
+                "pdf_status": "success",
+            })
+        else:
+            materials.append({
+                "id": f"m-{course_id}-pdf",
+                "title": "Course PDF Notes",
+                "type": "pdf",
+                "meta": "PDF Document",
+                "url": None,
+                "pdf_status": "unavailable",
             })
 
-        # Build the lesson from the course data
+
+        # Build the proxy video URL (frontend can use directly in <video> tag)
+        raw_video_url = course.get("course_url1") or ""
+        video_url = f"/api/courses/video/{course_id}"
+
+        # Build the lesson
         lesson = {
-            "id": f"{course_id}-1",
+            "id": f"{course_id}",
             "title": course.get("title") or course.get("course_name1", "Lesson 1"),
-            "video_url": course.get("course_url1") or "",
+            "video_url": video_url,
             "summary": course.get("about_the_course") or course.get("description", ""),
             "materials": materials,
         }
 
-        # Build the module (currently 1 module per course)
+        # Build the module
         module = {
             "id": int(course_id) if course_id.isdigit() else course_id,
             "title": course.get("title") or course.get("course_name1", "Module 1"),
             "lessons": [lesson],
         }
 
-        # Build the full response
         return {
             "course": {
                 "id": str(course.get("course_id", course_id)),
@@ -574,9 +669,10 @@ def get_course_modules(course_id: str) -> Dict[str, Any]:
 
     except Exception as e:
         print(f"[FOUNDRY ERROR] Get course modules failed: {str(e)}")
+        return {"course": {"id": course_id, "title": "", "description": "", "curriculum": []}}
 
 def get_module_content(course_id: str, module_id: str) -> Optional[Dict[str, Any]]:
-    """Get module content — video URL and PDF resource."""
+    """Get module content — video proxy URL and PDF resource."""
     if not is_foundry_configured():
         return None
 
@@ -585,14 +681,19 @@ def get_module_content(course_id: str, module_id: str) -> Optional[Dict[str, Any
         if not course:
             return None
 
+        # Build the proxy video URL
+        raw_video_url = course.get("course_url1") or ""
+        video_url = f"/api/courses/video/{course_id}"
+
         return {
             "courseId": course_id,
             "moduleId": module_id,
             "title": course.get("title") or course.get("course_name1"),
-            "video_url": course.get("course_url1"),
-            "pdf_resource": course.get("derived") or course.get("course_resources1"),
+            "video_url": f"/api/courses/video/{course_id}",
+            "pdf_resource": f"/api/courses/{course_id}/pdf",
             "content_id": course.get("content_id"),
         }
+
 
     except Exception as e:
         print(f"[FOUNDRY ERROR] Get module content failed: {str(e)}")
@@ -612,14 +713,17 @@ def get_course_pdf_content(course_id: str) -> tuple:
         with AllowBetaFeatures():
             client = foundry_osdk.get_client()
             course_obj = client.ontology.objects.Courses.get(pk_value)
+            media_stream = course_obj.course_resources1.get_media_content()
+            
+            # get_media_content() returns BytesIO — read the bytes from it
+            content = media_stream.read()
 
-            # Read the media property directly via OSDK
-            content = course_obj.course_resources1.read()
-            return (content, "application/pdf")
+        return (content, "application/pdf")
 
     except Exception as e:
         print(f"[FOUNDRY ERROR] PDF content fetch failed: {str(e)}")
         return (None, None)
+
 
 
 

@@ -46,6 +46,20 @@ async def get_current_user(
     
     return user
 
+def require_student_role(current_user: User) -> User:
+    """
+    Gate: Only users with 'Student' role can proceed.
+    Call this BEFORE any course-specific logic.
+    Returns the user if authorized, raises 403 if not.
+    """
+    # Check if user's role is Student (case-insensitive)
+    if not current_user.role or current_user.role.lower() != "student":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Student role required to access courses."
+        )
+    return current_user
+
 def require_role(allowed_roles: List[str]):
     def role_checker(current_user: User = Depends(get_current_user)) -> User:
         if current_user.role not in allowed_roles:

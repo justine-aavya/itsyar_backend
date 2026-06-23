@@ -129,14 +129,14 @@ def list_tracks(current_user: User = Depends(get_current_user)):
 # READ: Hackathons (All authenticated users)
 # ─────────────────────────────────────────────
 
-@router.get("/hackathons")
-def list_hackathons(current_user: User = Depends(get_current_user)):
-    """List all hackathons from Palantir."""
-    try:
-        hackathons = foundry_service.get_all_hackathons()
-        return {"ok": True, "hackathons": hackathons, "count": len(hackathons)}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# @router.get("/hackathons")
+# def list_hackathons(current_user: User = Depends(get_current_user)):
+#     """List all hackathons from Palantir."""
+#     try:
+#         hackathons = foundry_service.get_all_hackathons()
+#         return {"ok": True, "hackathons": hackathons, "count": len(hackathons)}
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
 
 
 # ─────────────────────────────────────────────
