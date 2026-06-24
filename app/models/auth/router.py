@@ -237,6 +237,12 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
 
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+from app.core.config import settings
+from app.models.auth.schemas import GoogleAuthRequest
+
+    
 from app.db.session import get_db
 from app.models.user import User
 from app.api.deps import get_current_user
@@ -247,6 +253,8 @@ from app.models.auth.schemas import (
     ForgotPasswordRequest, ResetPasswordRequest, TokenResponse, UserResponse
 )
 from app.integrations.palantir import foundry_service
+from app.integrations.google.oauth import verify_google_token
+
 
 
 router = APIRouter()
@@ -260,6 +268,96 @@ def error_response(status_code: int, message: str):
     )
 
 
+# ═══════════════════════════════════════════════════════════════
+# GOOGLE OAUTH — Sign In / Sign Up with Google
+# ═══════════════════════════════════════════════════════════════
+
+@router.post("/google", response_model=TokenResponse, status_code=status.HTTP_200_OK)
+def google_auth(request: GoogleAuthRequest, db: Session = Depends(get_db)):
+    """
+    Authenticate with Google. Handles both signup and login:
+    - If email exists → login (auto-link accounts)
+    - If email doesn't exist → create new user (signup)
+    
+    Frontend sends the Google ID token obtained from Google Sign-In button.
+    """
+    try:
+        # Step 1: Verify the Google ID token
+        # This checks the token is valid, not expired, and issued by Google
+        google_info = id_token.verify_oauth2_token(
+            request.token,
+            google_requests.Request(),
+            settings.GOOGLE_CLIENT_ID
+        )
+
+        # Step 2: Extract user info from Google
+        google_email = google_info.get("email", "").strip().lower()
+        google_name = google_info.get("name", "")
+        google_sub = google_info.get("sub", "")  # Google's unique user ID
+
+        if not google_email:
+            return error_response(400, "Google account has no email address")
+
+        # Step 3: Check if user already exists (by email)
+        user = db.query(User).filter(User.email == google_email).first()
+
+        if user:
+            # ─── EXISTING USER: Login + link Google if not already ─────
+            if user.auth_provider == "local":
+                # User signed up with email/password, now using Google too
+                user.auth_provider = "both"
+                db.commit()
+
+            assigned_role = user.role
+
+        else:
+            # ─── NEW USER: Signup via Google ──────────────────────────
+            user = User(
+                email=google_email,
+                hashed_password=None,  # No password for Google users
+                full_name=google_name,
+                role=request.role,
+                learning_interest=request.learning_interest.value,
+                auth_provider="google",
+                token_version=1
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+
+            assigned_role = user.role
+
+            # Push to Foundry
+            foundry_service.push_user_to_foundry(
+                user_id=str(user.id),
+                email=user.email,
+                full_name=user.full_name,
+                role=user.role,
+                learning_interest="",
+            )
+
+        # Step 4: Generate JWT tokens
+        access_token = create_access_token(data={"sub": str(user.id), "role": assigned_role})
+        refresh_token = create_refresh_token(data={"sub": str(user.id), "type": "refresh", "version": user.token_version})
+
+        # Step 5: Return response
+        response_user = UserResponse.model_validate(user)
+        response_user.role = assigned_role
+
+        return TokenResponse(
+            success=True,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user=response_user
+        )
+
+    except ValueError as e:
+        # Invalid Google token
+        return error_response(401, f"Invalid Google token: {str(e)}")
+    except Exception as e:
+        return error_response(500, f"Google authentication failed: {str(e)}")
+
+
 @router.post("/signup", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 def signup(request: SignupRequest, db: Session = Depends(get_db)):
     existing_user = db.query(User).filter(User.email == request.email).first()
@@ -271,7 +369,7 @@ def signup(request: SignupRequest, db: Session = Depends(get_db)):
         hashed_password=hash_password(request.password),
         full_name=request.full_name,
         role=request.role,
-        learning_interest=request.learning_interest.value if request.learning_interest else None,
+        learning_interest=request.learning_interest.value,
         token_version=1
     )
     db.add(new_user)
@@ -319,13 +417,23 @@ def signup(request: SignupRequest, db: Session = Depends(get_db)):
 def login(request: LoginRequest, db: Session = Depends(get_db)):
     # Find user by email
     user = db.query(User).filter(User.email == request.email).first()
-    if not user or not user.hashed_password or not verify_password(request.password, user.hashed_password):
+
+    # Check if user exists
+    if not user:
         return error_response(401, "Invalid email or password")
 
-    # Use requested role if provided, otherwise use stored role
-    assigned_role =  user.role  #request.role or
+    # Check if this is a Google-only user (no password set)
+    if not user.hashed_password and user.auth_provider == "google":
+        return error_response(403, "This account uses Google Sign-In. Please login with Google.")
 
-    # Validate that the requested role matches the stored role
+    # Verify password
+    if not user.hashed_password or not verify_password(request.password, user.hashed_password):
+        return error_response(401, "Invalid email or password")
+
+    # Use stored role
+    assigned_role = user.role
+
+    # Validate that the requested role matches the stored role (if provided)
     if request.role and request.role.lower() != user.role.lower():
         return error_response(403, f"Your account is registered as '{user.role}'. Cannot login as '{request.role}'.")
 
@@ -340,6 +448,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     response_user.role = assigned_role
 
     return TokenResponse(success=True, access_token=access_token, refresh_token=refresh_token, user=response_user)
+
 
 
 @router.post("/refresh-token", response_model=TokenResponse)

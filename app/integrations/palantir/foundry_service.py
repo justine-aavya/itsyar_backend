@@ -160,6 +160,28 @@ def _build_video_proxy_url(raw_foundry_url: str) -> str:
     """Return the original Foundry URL for iframe embedding on frontend."""
     return raw_foundry_url or ""
 
+def get_course_thumbnail_content(course_id: str) -> tuple:
+    """Fetch thumbnail image from Foundry using OSDK media property."""
+    if not is_foundry_configured():
+        return (None, None)
+
+    try:
+        try:
+            pk_value = int(course_id)
+        except ValueError:
+            pk_value = course_id
+
+        with AllowBetaFeatures():
+            client = foundry_osdk.get_client()
+            course_obj = client.ontology.objects.Courses.get(pk_value)
+            media_stream = course_obj.image.get_media_content()
+            content = media_stream.read()
+
+        return (content, "image/jpeg")
+
+    except Exception as e:
+        print(f"[FOUNDRY ERROR] Thumbnail fetch failed: {str(e)}")
+        return (None, None)
 
 
 
@@ -369,7 +391,7 @@ def get_all_courses(
                 "duration": c.get("duration") or c.get("duration1", "Self-paced"),
                 "instructor": c.get("instructor", "ItsYar Team"),
                 "description": c.get("description", ""),
-                "image": c.get("image", ""),
+                "image": f"/api/courses/thumbnail/{c.get('course_id', c.get('id', ''))}",
                 "badge": c.get("badge"),
                 "level": c.get("level", "Beginner"),
             })
@@ -411,7 +433,7 @@ def search_courses_catalog(query_str: str, limit: int = 10) -> Dict[str, Any]:
                 "duration": c.get("duration") or c.get("duration1", "Self-paced"),
                 "instructor": c.get("instructor", "ItsYar Team"),
                 "description": c.get("description", ""),
-                "image": c.get("image", ""),
+                "image": f"/api/courses/thumbnail/{c.get('course_id', c.get('id', ''))}",
                 "badge": c.get("badge"),
                 "level": c.get("level", "Beginner"),
             })
@@ -636,7 +658,17 @@ def get_course_modules(course_id: str) -> Dict[str, Any]:
                 "url": None,
                 "pdf_status": "unavailable",
             })
-
+        
+        has_quiz = False
+        try:
+            raw_quizzes = _take_objects("Quizes", 200)
+            course_questions = [
+                q for q in raw_quizzes
+                if str(getattr(q, "course_id", "")) == str(course_id)
+            ]
+            has_quiz = len(course_questions) > 0
+        except Exception:
+            has_quiz = False
 
         # Build the proxy video URL (frontend can use directly in <video> tag)
         raw_video_url = course.get("course_url1") or ""
@@ -645,6 +677,7 @@ def get_course_modules(course_id: str) -> Dict[str, Any]:
         # Build the lesson
         lesson = {
             "id": f"{course_id}",
+            "has_quiz": has_quiz,
             "title": course.get("title") or course.get("course_name1", "Lesson 1"),
             "video_url": video_url,
             "summary": course.get("about_the_course") or course.get("description", ""),

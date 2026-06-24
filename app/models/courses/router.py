@@ -264,6 +264,24 @@ def stream_course_video(
     except Exception as e:
         return error_response(500, f"Video streaming failed: {str(e)}")
 
+@router.get("/thumbnail/{course_id}", status_code=status.HTTP_200_OK)
+def get_course_thumbnail(course_id: str):
+    """Serve course thumbnail image from Foundry."""
+    try:
+        content, content_type = foundry_service.get_course_thumbnail_content(course_id)
+
+        if not content:
+            return error_response(404, "Thumbnail not found")
+
+        from fastapi.responses import Response as RawResponse
+        return RawResponse(
+            content=content,
+            media_type=content_type or "image/jpeg",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
+    except Exception as e:
+        return error_response(500, f"Thumbnail failed: {str(e)}")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -289,14 +307,17 @@ def get_course_details(
         enrollment = foundry_service.check_user_enrollment(course_id=course_id, user_id=str(current_user.id))
         is_enrolled = enrollment.get("isEnrolled", False)
 
-        # Get completion percentage (only if enrolled)
+        # Get completion percentage and status
         completion_percentage = 0
+        status_value = "not enrolled"
         if is_enrolled:
             progress = foundry_service.get_course_progress(course_id=course_id, user_id=str(current_user.id))
             if progress.get("status") == "completed":
                 completion_percentage = 100
+                status_value = "completed"
+            else:
+                status_value = "in progress"
 
-        # Build materials array (only if PDF exists in Foundry)
         # Build materials array
         materials = []
         if course.get("derived") or course.get("course_resources1"):
@@ -326,6 +347,7 @@ def get_course_details(
                 "course_id": str(course.get("course_id", course_id)),
                 "module_id": 1,
                 "title": course.get("title") or course.get("course_name1", ""),
+                "include": course.get("include", []),
                 "tag": course.get("tag", "General"),
                 "description": course.get("description", ""),
                 "longDescription": course.get("about_the_course"),
@@ -333,7 +355,7 @@ def get_course_details(
                 "level": course.get("level", "Beginner"),
                 "modulesCount": 1,
                 "duration": course.get("duration1", "Self-paced"),
-                "thumbnail": course.get("image", ""),
+                "thumbnail": f"/api/courses/thumbnail/{course_id}",
                 "instructor": course.get("instructor", "ItsYar Team"),
                 "videoUrl": f"/api/courses/video/{course_id}",
                 "pdfResource": f"/api/courses/{course_id}/pdf",
@@ -341,13 +363,14 @@ def get_course_details(
                 "curriculum": course.get("curriculum1"),
                 "takeaways": course.get("takeaways"),
                 "courseCompletionPercentage": completion_percentage,
-                "materials": materials,
+                "status": status_value,
                 "isEnrolled": is_enrolled,
+                "materials": materials
+                
             }
         }
 
     except HTTPException:
-        # Let role check 403 pass through
         raise
     except Exception as e:
         return error_response(500, f"Failed to fetch course: {str(e)}")

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Google Sign-In Test</title>
+    <script src="https://accounts.google.com/gsi/client" async></script>
+</head>
+<body>
+    <h1>Google Sign-In Test</h1>
+
+    <div id="g_id_onload"
+         data-client_id=1039518404348-c9ohvulag9e4djrctpfhvvr2vastegse.apps.googleusercontent.com
+         data-callback="handleCredentialResponse">
+    </div>
+    <div class="g_id_signin" data-type="standard"></div>
+
+    <pre id="output"></pre>
+
+    <script>
+        function handleCredentialResponse(response) {
+            const token = response.credential;
+            document.getElementById('output').textContent = 
+                "Token received!\n\n" + token + "\n\nNow testing backend...";
+
+            // Send to your backend
+            fetch('http://localhost:8000/api/auth/google', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ token: token, userType: "Student" })
+            })
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('output').textContent += 
+                    "\n\nBackend Response:\n" + JSON.stringify(data, null, 2);
+            })
+            .catch(err => {
+                document.getElementById('output').textContent += 
+                    "\n\nError: " + err.message;
+            });
+        }
+    </script>
+</body>
+</html>

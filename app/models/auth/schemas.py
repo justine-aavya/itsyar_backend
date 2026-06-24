@@ -196,6 +196,15 @@ class LearningInterest(str, Enum):
     OTHER = "Other"
 
 
+class GoogleAuthRequest(BaseModel):
+    """Frontend sends the Google ID token after user signs in with Google."""
+    token: str  # Google ID token from frontend
+    role: Optional[str] = Field(default="Student", alias="userType")
+    learning_interest: Optional[str] = Field(default=None, alias="interest")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class SignupRequest(BaseModel):
     full_name: str = Field(alias="fullName")
     email: EmailStr
@@ -272,6 +281,7 @@ class UserResponse(BaseModel):
     full_name: str
     role: str
     learning_interest: Optional[str] = None
+    auth_provider: Optional[str] = "local"  
 
     model_config = ConfigDict(from_attributes=True)
 
