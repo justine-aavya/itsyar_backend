@@ -221,6 +221,66 @@ def get_my_courses(
     except Exception as e:
         return error_response(500, f"Failed to fetch enrolled courses: {str(e)}")
 
+# ═══════════════════════════════════════════════════════════════
+# CERTIFICATE
+# ═══════════════════════════════════════════════════════════════
+
+##for completion check
+# @router.get("/{course_id}/certificate", status_code=status.HTTP_200_OK)
+# def get_certificate_info(
+#     course_id: str,
+#     current_user: User = Depends(get_current_user),
+# ):
+#     """Get certificate metadata. Only accessible if course is completed."""
+#     try:
+#         require_student_role(current_user)
+
+#         # Get certificate info (returns None if not completed)
+#         cert_info = foundry_service.get_certificate_info(
+#             course_id=course_id,
+#             user_id=str(current_user.id),
+#             user_name=current_user.full_name
+#         )
+
+#         if not cert_info:
+#             return error_response(403, "Complete the course to earn your certificate")
+
+#         return {"success": True, "certificate": cert_info}
+
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         return error_response(500, f"Certificate failed: {str(e)}")
+
+@router.get("/{course_id}/certificate", status_code=status.HTTP_200_OK)
+def get_certificate_info(
+    course_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Get certificate metadata."""
+    try:
+        require_student_role(current_user)
+
+        cert_info = foundry_service.get_certificate_info(
+            course_id=course_id,
+            user_id=str(current_user.id),
+            user_name=current_user.full_name
+        )
+
+        if not cert_info:
+            return error_response(404, "Certificate info not found")
+
+        return {"success": True, "certificate": cert_info}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        return error_response(500, f"Certificate failed: {str(e)}")
+
+
+
+
+
 
 # ═══════════════════════════════════════════════════════════════
 # VIDEO — Stream from Foundry Media Property
@@ -263,6 +323,56 @@ def stream_course_video(
         raise
     except Exception as e:
         return error_response(500, f"Video streaming failed: {str(e)}")
+    
+
+# ## for multiple courses
+# # ═══════════════════════════════════════════════════════════════
+# # VIDEO — Per module
+# # ═══════════════════════════════════════════════════════════════
+
+# @router.get("/video/{course_id}/{module_id}", status_code=status.HTTP_200_OK)
+# def stream_module_video(course_id: str, module_id: str):
+#     """Stream video for a specific module."""
+#     try:
+#         content, content_type = foundry_service.get_course_video_content(course_id, module_id)
+#         if not content:
+#             return error_response(404, "Video not found for this module")
+
+#         return RawResponse(
+#             content=content,
+#             media_type=content_type or "video/mp4",
+#             headers={
+#                 "Content-Disposition": f"inline; filename=course_{course_id}_module_{module_id}_video.mp4",
+#                 "Content-Type": "video/mp4",
+#                 "Accept-Ranges": "bytes",
+#                 "Cache-Control": "public, max-age=3600",
+#             },
+#         )
+#     except Exception as e:
+#         return error_response(500, f"Video streaming failed: {str(e)}")
+
+
+# @router.get("/video/{course_id}", status_code=status.HTTP_200_OK)
+# def stream_course_video(course_id: str):
+#     """Stream video for course (first module). Fallback."""
+#     try:
+#         content, content_type = foundry_service.get_course_video_content(course_id)
+#         if not content:
+#             return error_response(404, "Video not found")
+
+#         return RawResponse(
+#             content=content,
+#             media_type=content_type or "video/mp4",
+#             headers={
+#                 "Content-Disposition": f"inline; filename=course_{course_id}_video.mp4",
+#                 "Content-Type": "video/mp4",
+#                 "Accept-Ranges": "bytes",
+#                 "Cache-Control": "public, max-age=3600",
+#             },
+#         )
+#     except Exception as e:
+#         return error_response(500, f"Video streaming failed: {str(e)}")
+
 
 @router.get("/thumbnail/{course_id}", status_code=status.HTTP_200_OK)
 def get_course_thumbnail(course_id: str):
@@ -306,17 +416,16 @@ def get_course_details(
         # Check if current user is enrolled
         enrollment = foundry_service.check_user_enrollment(course_id=course_id, user_id=str(current_user.id))
         is_enrolled = enrollment.get("isEnrolled", False)
+        curriculum_data = foundry_service._get_curriculum_for_course(course_id)
 
         # Get completion percentage and status
         completion_percentage = 0
         status_value = "not enrolled"
         if is_enrolled:
             progress = foundry_service.get_course_progress(course_id=course_id, user_id=str(current_user.id))
-            if progress.get("status") == "completed":
-                completion_percentage = 100
-                status_value = "completed"
-            else:
-                status_value = "in progress"
+            completion_percentage = progress.get("percentage", 0)
+            status_value = progress.get("status", "in progress")
+
 
         # Build materials array
         materials = []
@@ -345,7 +454,8 @@ def get_course_details(
             "data": {
                 "id": str(course.get("course_id", course_id)),
                 "course_id": str(course.get("course_id", course_id)),
-                "module_id": 1,
+                #"module_id": curriculum_data[0]["id"] if curriculum_data else course_id,
+                "module_id": curriculum_data[0].get("id", course_id) if curriculum_data else course_id,
                 "title": course.get("title") or course.get("course_name1", ""),
                 "include": course.get("include", []),
                 "tag": course.get("tag", "General"),
@@ -353,14 +463,12 @@ def get_course_details(
                 "longDescription": course.get("about_the_course"),
                 "summary": course.get("about_the_course") or course.get("description", ""),
                 "level": course.get("level", "Beginner"),
-                "modulesCount": 1,
-                "duration": course.get("duration1", "Self-paced"),
                 "thumbnail": f"/api/courses/thumbnail/{course_id}",
                 "instructor": course.get("instructor", "ItsYar Team"),
                 "videoUrl": f"/api/courses/video/{course_id}",
                 "pdfResource": f"/api/courses/{course_id}/pdf",
-                "contentId": course.get("content_id"),
-                "curriculum": course.get("curriculum1"),
+                "modulesCount": len(curriculum_data) or 1,
+                "curriculum": curriculum_data,
                 "takeaways": course.get("takeaways"),
                 "courseCompletionPercentage": completion_percentage,
                 "status": status_value,
@@ -408,6 +516,76 @@ def stream_course_pdf(
     #     raise
     except Exception as e:
         return error_response(500, f"PDF streaming failed: {str(e)}")
+
+# ## for multiple courses
+# # ═══════════════════════════════════════════════════════════════
+# # PDF — Per module
+# # ═══════════════════════════════════════════════════════════════
+
+# @router.get("/{course_id}/pdf/{module_id}", status_code=status.HTTP_200_OK)
+# def stream_module_pdf(course_id: str, module_id: str):
+#     """Stream PDF for a specific module."""
+#     try:
+#         content, content_type = foundry_service.get_course_pdf_content(course_id, module_id)
+#         if not content:
+#             return error_response(404, "PDF not found for this module")
+
+#         return RawResponse(
+#             content=content,
+#             media_type="application/pdf",
+#             headers={"Content-Disposition": f"inline; filename=course_{course_id}_module_{module_id}_notes.pdf"},
+#         )
+#     except Exception as e:
+#         return error_response(500, f"PDF streaming failed: {str(e)}")
+
+
+# @router.get("/{course_id}/pdf", status_code=status.HTTP_200_OK)
+# def stream_course_pdf(course_id: str):
+#     """Stream PDF for course (first module). Fallback."""
+#     try:
+#         content, content_type = foundry_service.get_course_pdf_content(course_id)
+#         if not content:
+#             return error_response(404, "PDF not found")
+
+#         return RawResponse(
+#             content=content,
+#             media_type="application/pdf",
+#             headers={"Content-Disposition": f"inline; filename=course_{course_id}_notes.pdf"},
+#         )
+#     except Exception as e:
+#         return error_response(500, f"PDF streaming failed: {str(e)}")
+
+# ═══════════════════════════════════════════════════════════════
+# MARK COURSE COMPLETE
+# ═══════════════════════════════════════════════════════════════
+
+@router.post("/{course_id}/complete", status_code=status.HTTP_200_OK)
+def mark_course_complete(
+    course_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Manually mark a course as complete. Requires Student role + enrollment."""
+    try:
+        # Role gate
+        require_student_role(current_user)
+
+        # Enrollment gate
+        status_check = foundry_service.check_user_enrollment(course_id=course_id, user_id=str(current_user.id))
+        if not status_check.get("isEnrolled"):
+            return error_response(403, "You must be enrolled to complete this course")
+
+        # Mark complete in Foundry
+        result = foundry_service.mark_course_complete(course_id=course_id, user_id=str(current_user.id))
+
+        if result.get("status") == "error":
+            return error_response(500, result.get("message", "Failed to mark complete"))
+
+        return {"success": True, **result}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        return error_response(500, f"Mark complete failed: {str(e)}")
 
 
 # ═══════════════════════════════════════════════════════════════

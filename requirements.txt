@@ -12,7 +12,3 @@ python-multipart==0.0.9
 google-auth==2.29.0
 google-auth-oauthlib==1.2.0
 requests==2.32.3
-<<<<<<< HEAD
-
-=======
->>>>>>> 428f633a77d4ff70434dffa8468b164e8a99e957

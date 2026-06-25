@@ -1,185 +1,166 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-
-from pydantic import BaseModel
-
+from fastapi import APIRouter, Depends, status, HTTPException
+from fastapi.responses import JSONResponse
 from typing import Optional
 
-
-
-from app.api.deps import get_current_user, require_role
-
+from app.api.deps import get_current_user
 from app.models.user import User
-
-import os
-
 from app.integrations.palantir import foundry_service
-
-from app.integrations.palantir.foundry_client import verify_foundry_credentials
-
-
-
-
+from .schemas import HackathonRegistrationRequest
 
 router = APIRouter()
 
 
-
-class EventRegistration(BaseModel):
-
-    event_id: str
-
-
-
-@router.get("/status")
-
-def foundry_status():
-
-    """Check if Foundry is responding or running into authentication blocks."""
-
-    url = os.getenv("FOUNDRY_URL", "")
-
-    client_id = os.getenv("FOUNDRY_CLIENT_ID", "")
-
-    client_secret = os.getenv("FOUNDRY_CLIENT_SECRET", "")
-
-   
-
-    # Run the live network check matching your terminal diagnostics
-
-    check = verify_foundry_credentials(url, client_id, client_secret)
-
-   
-
-    if check["connected"]:
-
-        return {
-
-            "foundry_configured": True,
-
-            "mode": "live",
-
-            "message": "Connected to Foundry! Credentials verified successfully."
-
-        }
-
-    else:
-
-        return {
-
-            "foundry_configured": False,
-
-            "mode": "error",
-
-            "message": f"Configuration error: Palantir rejected your keys. Details: {check['message']}"
-
-        }
+def error_response(status_code: int, message: str):
+    return JSONResponse(
+        status_code=status_code,
+        content={"error": {"data": {"message": message}}}
+    )
 
 
+# ═══════════════════════════════════════════════════════════════
+# LIST ALL HACKATHONS
+# ═══════════════════════════════════════════════════════════════
 
-@router.get("/stats")
-
-def platform_stats(current_user: User = Depends(require_role(["Admin", "Mentor"]))):
-
+@router.get("", status_code=status.HTTP_200_OK)
+def list_hackathons(
+    status_filter: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+):
+    """List all hackathons. Optional filter by status (e.g., ?status_filter=Open)."""
     try:
-
-        return foundry_service.get_platform_stats()
-
-    except Exception as e:
-
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-
-@router.get("/events")
-
-def list_events(status_filter: Optional[str] = Query(None, alias="status"), current_user: User = Depends(get_current_user)):
-
-    try:
-
-        events = foundry_service.get_all_events(status_filter=status_filter)
-
-        return {"ok": True, "events": events, "count": len(events)}
-
-    except Exception as e:
-
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"OSDK data retrieval failed: {str(e)}")
-
-
-
-@router.get("/events/{event_id}")
-
-def get_event(event_id: str, current_user: User = Depends(get_current_user)):
-
-    try:
-
-        event = foundry_service.get_event_by_id(event_id)
-
-        if not event:
-
-            raise HTTPException(status_code=404, detail="Event not found")
-
-        return {"ok": True, "data": event}
+        result = foundry_service.get_all_hackathons(status_filter=status_filter)
+        return {"success": True, "count": len(result), "hackathons": result}
 
     except HTTPException:
-
         raise
-
     except Exception as e:
-
-        raise HTTPException(status_code=500, detail=str(e))
-
+        return error_response(500, f"Failed to fetch hackathons: {str(e)}")
 
 
-@router.get("/events/{event_id}/challenges")
+# ═══════════════════════════════════════════════════════════════
+# USER'S CURRENT TEAM (must be BEFORE /{hackathon_id})
+# ═══════════════════════════════════════════════════════════════
 
-def event_challenges(event_id: str, current_user: User = Depends(get_current_user)):
-
+@router.get("/user/team", status_code=status.HTTP_200_OK)
+def get_user_team(
+    current_user: User = Depends(get_current_user),
+):
+    """Get the current user's team info."""
     try:
+        team = foundry_service.get_user_team(user_id=str(current_user.id))
 
-        challenges = foundry_service.get_challenges(event_id)
+        if not team:
+            return {"success": True, "team": None, "message": "No team found"}
 
-        return {"event_id": event_id, "challenges": challenges, "count": len(challenges)}
-
-    except Exception as e:
-
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-
-@router.get("/tracks")
-
-def list_tracks(current_user: User = Depends(get_current_user)):
-
-    try:
-
-        tracks = foundry_service.get_all_tracks()
-
-        return {"tracks": tracks, "count": len(tracks)}
-
-    except Exception as e:
-
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-
-@router.post("/events/{event_id}/enrol")
-
-def enroll_in_event(event_id: str, current_user: User = Depends(require_role(["Student", "Participant"]))):
-
-    try:
-
-        result = foundry_service.register_for_event(event_id=event_id, user_id=str(current_user.id))
-
-        if isinstance(result, dict) and result.get("status") == "error":
-
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.get("message"))
-
-        return {"ok": True, "data": result}
+        return {"success": True, "team": team}
 
     except HTTPException:
-
         raise
-
     except Exception as e:
+        return error_response(500, f"Failed to fetch team: {str(e)}")
 
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Foundry Action Rejected: {str(e)}")
+
+# ═══════════════════════════════════════════════════════════════
+# HACKATHON DETAIL
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/{hackathon_id}", status_code=status.HTTP_200_OK)
+def get_hackathon_details(
+    hackathon_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Get full hackathon details including teams, rules, etc."""
+    try:
+        hackathon = foundry_service.get_hackathon_by_id(hackathon_id=hackathon_id)
+        if not hackathon:
+            return error_response(404, "Hackathon not found")
+
+        return {"success": True, "hackathon": hackathon}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        return error_response(500, f"Failed to fetch hackathon: {str(e)}")
+
+
+# ═══════════════════════════════════════════════════════════════
+# JOIN HACKATHON (QUICK)
+# ═══════════════════════════════════════════════════════════════
+
+@router.post("/{hackathon_id}/join", status_code=status.HTTP_200_OK)
+def join_hackathon(
+    hackathon_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Quick join — registers the user for the hackathon."""
+    try:
+        # Check if already registered
+        is_registered = foundry_service.check_hackathon_registration(
+            hackathon_id=hackathon_id, user_id=str(current_user.id)
+        )
+        if is_registered:
+            return error_response(409, "You are already registered for this hackathon")
+
+        # Register
+        result = foundry_service.register_for_hackathon(
+            hackathon_id=hackathon_id,
+            user_id=str(current_user.id)
+        )
+
+        if result.get("status") == "error":
+            return error_response(500, result.get("message", "Registration failed"))
+
+        return {
+            "success": True,
+            "message": "Your team has successfully joined the hackathon.",
+            "registrationId": result.get("registration_id")
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        return error_response(500, f"Join failed: {str(e)}")
+
+
+# ═══════════════════════════════════════════════════════════════
+# REGISTER FOR HACKATHON (FULL FORM)
+# ═══════════════════════════════════════════════════════════════
+
+@router.post("/{hackathon_id}/register", status_code=status.HTTP_200_OK)
+def register_for_hackathon(
+    hackathon_id: str,
+    payload: HackathonRegistrationRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Full registration with form data."""
+    try:
+        # Validate rules agreement
+        if not payload.agree_to_rules:
+            return error_response(400, "You must agree to the rules to register")
+
+        # Check if already registered
+        is_registered = foundry_service.check_hackathon_registration(
+            hackathon_id=hackathon_id, user_id=str(current_user.id)
+        )
+        if is_registered:
+            return error_response(409, "You are already registered for this hackathon")
+
+        # Register
+        result = foundry_service.register_for_hackathon(
+            hackathon_id=hackathon_id,
+            user_id=str(current_user.id)
+        )
+
+        if result.get("status") == "error":
+            return error_response(500, result.get("message", "Registration failed"))
+
+        return {
+            "success": True,
+            "message": "Registration confirmed",
+            "registrationId": result.get("registration_id"),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        return error_response(500, f"Registration failed: {str(e)}")
