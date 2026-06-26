@@ -465,8 +465,159 @@
 #             print(f"  {attr}")
 ##############################################################################3
 
-# test_sdk_v27.py
-import os
+# # test_sdk_v27.py
+# import os
+# from dotenv import load_dotenv
+# load_dotenv()
+
+# from app.integrations.palantir.foundry_client import foundry_osdk
+# try:
+#     from foundry_sdk_runtime import AllowBetaFeatures
+# except ImportError:
+#     from contextlib import contextmanager
+#     @contextmanager
+#     def AllowBetaFeatures():
+#         yield
+
+# with AllowBetaFeatures():
+#     client = foundry_osdk.get_client()
+
+#     # All object types
+#     print("=" * 60)
+#     print("ALL OBJECT TYPES (SDK 0.27):")
+#     print("=" * 60)
+#     for attr in sorted(dir(client.ontology.objects)):
+#         if not attr.startswith('_'):
+#             print(f"  {attr}")
+
+#     # All actions
+#     print("\n" + "=" * 60)
+#     print("ALL ACTIONS (SDK 0.27):")
+#     print("=" * 60)
+#     for attr in sorted(dir(client.ontology.actions)):
+#         if not attr.startswith('_'):
+#             print(f"  {attr}")
+
+#     # Courses — check for new properties
+#     print("\n" + "=" * 60)
+#     print("COURSES — All Properties:")
+#     print("=" * 60)
+#     courses = client.ontology.objects.Courses.take(2)
+#     if courses:
+#         c = courses[0]
+#         for attr in sorted(dir(c)):
+#             if attr.startswith('__'):
+#                 continue
+#             try:
+#                 val = getattr(c, attr)
+#                 val_type = type(val).__name__
+#                 if val_type in ("method", "builtin_function_or_method", "function"):
+#                     continue
+#                 print(f"    {attr} ({val_type}) = {repr(val)[:200]}")
+#             except Exception as e:
+#                 print(f"    {attr} = [ERROR: {e}]")
+
+#     # Hackathons — check for new properties
+#     print("\n" + "=" * 60)
+#     print("HACKATHONS — All Properties:")
+#     print("=" * 60)
+#     hacks = client.ontology.objects.Hackathons.take(2)
+#     if hacks:
+#         h = hacks[0]
+#         for attr in sorted(dir(h)):
+#             if attr.startswith('__'):
+#                 continue
+#             try:
+#                 val = getattr(h, attr)
+#                 val_type = type(val).__name__
+#                 if val_type in ("method", "builtin_function_or_method", "function"):
+#                     continue
+#                 print(f"    {attr} ({val_type}) = {repr(val)[:200]}")
+#             except Exception as e:
+#                 print(f"    {attr} = [ERROR: {e}]")
+
+###############################################################################################################333
+
+
+# # test_module_summaries.py
+# import os
+# from dotenv import load_dotenv
+# load_dotenv()
+
+# from app.integrations.palantir.foundry_client import foundry_osdk
+# try:
+#     from foundry_sdk_runtime import AllowBetaFeatures
+# except ImportError:
+#     from contextlib import contextmanager
+#     @contextmanager
+#     def AllowBetaFeatures():
+#         yield
+
+# with AllowBetaFeatures():
+#     client = foundry_osdk.get_client()
+#     courses = client.ontology.objects.Courses.take(20)
+
+#     print("CHECKING MODULE-SPECIFIC SUMMARIES:")
+#     print("=" * 60)
+#     for c in courses:
+#         cid = getattr(c, "course_id", "?")
+#         lid = getattr(c, "lesson_id", "?")
+#         title = getattr(c, "lesson_title", "?")
+#         desc = getattr(c, "description", None)
+#         about = getattr(c, "about_the_course", None)
+#         print(f"\n  course:{cid} | lesson:{lid} | {title}")
+#         print(f"    description: {repr(desc)[:150] if desc else 'None'}")
+#         print(f"    about_the_course: {repr(about)[:150] if about else 'None'}")
+
+###################################################################################################3
+
+
+# # test_module_summary_field.py
+# import os
+# from dotenv import load_dotenv
+# load_dotenv()
+
+# from app.integrations.palantir.foundry_client import foundry_osdk
+# try:
+#     from foundry_sdk_runtime import AllowBetaFeatures
+# except ImportError:
+#     from contextlib import contextmanager
+#     @contextmanager
+#     def AllowBetaFeatures():
+#         yield
+
+# with AllowBetaFeatures():
+#     client = foundry_osdk.get_client()
+#     courses = client.ontology.objects.Courses.take(10)
+
+#     print("CHECKING FOR 'SUMMARY' PROPERTY:")
+#     print("=" * 60)
+#     for c in courses:
+#         cid = getattr(c, "course_id", "?")
+#         lid = getattr(c, "lesson_id", "?")
+#         title = getattr(c, "lesson_title", "?")
+        
+#         # Check for summary-related fields
+#         summary = getattr(c, "summary", None)
+#         summary1 = getattr(c, "summary1", None)
+#         lesson_summary = getattr(c, "lesson_summary", None)
+        
+#         print(f"\n  course:{cid} | lesson:{lid} | {title}")
+#         print(f"    summary: {repr(summary)[:200] if summary else 'None'}")
+#         print(f"    summary1: {repr(summary1)[:200] if summary1 else 'None'}")
+#         print(f"    lesson_summary: {repr(lesson_summary)[:200] if lesson_summary else 'None'}")
+        
+#         # Also check ALL attributes for anything with "summ" in the name
+#         for attr in sorted(dir(c)):
+#             if 'summ' in attr.lower() and not attr.startswith('_'):
+#                 val = getattr(c, attr, None)
+#                 if val:
+#                     print(f"    ⭐ {attr}: {repr(val)[:200]}")
+
+############################################################################################################3
+
+# test_progress_details.py
+import os, inspect
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -482,56 +633,47 @@ except ImportError:
 with AllowBetaFeatures():
     client = foundry_osdk.get_client()
 
-    # All object types
+    # Check ProgressDetails object
     print("=" * 60)
-    print("ALL OBJECT TYPES (SDK 0.27):")
+    print("PROGRESS DETAILS OBJECT:")
     print("=" * 60)
-    for attr in sorted(dir(client.ontology.objects)):
-        if not attr.startswith('_'):
-            print(f"  {attr}")
-
-    # All actions
-    print("\n" + "=" * 60)
-    print("ALL ACTIONS (SDK 0.27):")
-    print("=" * 60)
-    for attr in sorted(dir(client.ontology.actions)):
-        if not attr.startswith('_'):
-            print(f"  {attr}")
-
-    # Courses — check for new properties
-    print("\n" + "=" * 60)
-    print("COURSES — All Properties:")
-    print("=" * 60)
-    courses = client.ontology.objects.Courses.take(2)
-    if courses:
-        c = courses[0]
-        for attr in sorted(dir(c)):
-            if attr.startswith('__'):
-                continue
-            try:
-                val = getattr(c, attr)
-                val_type = type(val).__name__
-                if val_type in ("method", "builtin_function_or_method", "function"):
+    try:
+        items = client.ontology.objects.ProgressDetails.take(10)
+        print(f"  Found: {len(items)} items")
+        if items:
+            p = items[0]
+            for attr in sorted(dir(p)):
+                if attr.startswith('__'):
                     continue
-                print(f"    {attr} ({val_type}) = {repr(val)[:200]}")
-            except Exception as e:
-                print(f"    {attr} = [ERROR: {e}]")
+                try:
+                    val = getattr(p, attr)
+                    val_type = type(val).__name__
+                    if val_type in ("method", "builtin_function_or_method", "function"):
+                        continue
+                    print(f"    {attr} ({val_type}) = {repr(val)[:200]}")
+                except Exception as e:
+                    print(f"    {attr} = [ERROR: {e}]")
+    except Exception as e:
+        print(f"  ERROR: {e}")
 
-    # Hackathons — check for new properties
+    # Check create_progress_details action signature
     print("\n" + "=" * 60)
-    print("HACKATHONS — All Properties:")
+    print("CREATE_PROGRESS_DETAILS ACTION:")
     print("=" * 60)
-    hacks = client.ontology.objects.Hackathons.take(2)
-    if hacks:
-        h = hacks[0]
-        for attr in sorted(dir(h)):
-            if attr.startswith('__'):
-                continue
-            try:
-                val = getattr(h, attr)
-                val_type = type(val).__name__
-                if val_type in ("method", "builtin_function_or_method", "function"):
-                    continue
-                print(f"    {attr} ({val_type}) = {repr(val)[:200]}")
-            except Exception as e:
-                print(f"    {attr} = [ERROR: {e}]")
+    try:
+        sig = inspect.signature(client.ontology.actions.create_progress_details)
+        params = list(sig.parameters.keys())
+        print(f"  Parameters: {params}")
+    except Exception as e:
+        print(f"  ERROR: {e}")
+
+    # Check complete_module action signature
+    print("\n" + "=" * 60)
+    print("COMPLETE_MODULE ACTION:")
+    print("=" * 60)
+    try:
+        sig = inspect.signature(client.ontology.actions.complete_module)
+        params = list(sig.parameters.keys())
+        print(f"  Parameters: {params}")
+    except Exception as e:
+        print(f"  ERROR: {e}")

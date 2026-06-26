@@ -1,6 +1,8 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 from datetime import datetime
+
+
 
 # --- Listing / Detail Schemas ---
 class CourseItem(BaseModel):
@@ -188,3 +190,11 @@ class HistoricalTestResultResponse(BaseModel):
     attempts: int
     bestScore: int
     lastAttemptAt: datetime
+
+
+class LessonProgressRequest(BaseModel):
+    played_seconds: float = Field(alias="playedSeconds")
+    total_seconds: float = Field(alias="totalSeconds")
+    is_completed: Optional[bool] = Field(default=False, alias="isCompleted")
+
+    model_config = ConfigDict(populate_by_name=True)
