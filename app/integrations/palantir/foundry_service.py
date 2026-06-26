@@ -367,6 +367,7 @@ def get_all_tracks() -> List[Dict[str, Any]]:
 # # COURSES — LIST, SEARCH, DETAIL
 # # ═══════════════════════════════════════════════════════════════
 
+### Single course, after multi-module
 def get_all_courses(
     offset: int = 0,
     limit: int = 6,
@@ -379,7 +380,14 @@ def get_all_courses(
 
     try:
         raw = _take_objects("Courses", 200)
-        courses = [flatten_osdk_object(c) for c in raw]
+
+        # Deduplicate by course_id (multiple lessons per course)
+        seen = {}
+        for c in raw:
+            cid = str(getattr(c, "course_id", ""))
+            if cid not in seen:
+                seen[cid] = c
+        courses = [flatten_osdk_object(c) for c in seen.values()]
 
         # Apply category filter
         if category:
@@ -415,6 +423,57 @@ def get_all_courses(
     except Exception as e:
         print(f"[FOUNDRY ERROR] Courses fetch failed: {str(e)}")
         return {"courses": [], "total": 0, "offset": offset, "limit": limit}
+
+
+### Singel Course, before multi-module update
+# def get_all_courses(
+#     offset: int = 0,
+#     limit: int = 6,
+#     category: Optional[str] = None,
+#     level: Optional[str] = None
+# ) -> Dict[str, Any]:
+#     """List all courses with pagination and optional filters."""
+#     if not is_foundry_configured():
+#         return {"courses": [], "total": 0, "offset": offset, "limit": limit}
+
+#     try:
+#         raw = _take_objects("Courses", 200)
+#         courses = [flatten_osdk_object(c) for c in raw]
+
+#         # Apply category filter
+#         if category:
+#             courses = [c for c in courses if str(c.get("tag", "")).lower() == category.lower()]
+
+#         # Apply level filter
+#         if level:
+#             courses = [c for c in courses if str(c.get("level", "")).lower() == level.lower()]
+
+#         # Calculate total before pagination
+#         total = len(courses)
+
+#         # Apply pagination
+#         paginated = courses[offset:offset + limit]
+
+#         # Format each course
+#         formatted = []
+#         for c in paginated:
+#             formatted.append({
+#                 "id": str(c.get("course_id", c.get("id", ""))),
+#                 "title": c.get("title") or c.get("course_name1", "Untitled"),
+#                 "tag": c.get("tag", "General"),
+#                 "duration": c.get("duration") or c.get("duration1", "Self-paced"),
+#                 "instructor": c.get("instructor", "ItsYar Team"),
+#                 "description": c.get("description", ""),
+#                 "image": f"/api/courses/thumbnail/{c.get('course_id', c.get('id', ''))}",
+#                 "badge": c.get("badge"),
+#                 "level": c.get("level", "Beginner"),
+#             })
+
+#         return {"courses": formatted, "total": total, "offset": offset, "limit": limit}
+
+#     except Exception as e:
+#         print(f"[FOUNDRY ERROR] Courses fetch failed: {str(e)}")
+#         return {"courses": [], "total": 0, "offset": offset, "limit": limit}
 
 #For multiple courses
 # def get_all_courses(
@@ -472,13 +531,20 @@ def get_all_courses(
 
 
 def search_courses_catalog(query_str: str, limit: int = 10) -> Dict[str, Any]:
-    """Search courses by keyword in title, name, description, or tag."""
+    """Search courses by keyword (deduplicated)."""
     if not is_foundry_configured():
         return {"results": [], "query": query_str, "count": 0}
 
     try:
         raw = _take_objects("Courses", 200)
-        courses = [flatten_osdk_object(c) for c in raw]
+
+        # Deduplicate by course_id
+        seen = {}
+        for c in raw:
+            cid = str(getattr(c, "course_id", ""))
+            if cid not in seen:
+                seen[cid] = c
+        courses = [flatten_osdk_object(c) for c in seen.values()]
 
         q = query_str.lower()
         results = [
@@ -490,7 +556,6 @@ def search_courses_catalog(query_str: str, limit: int = 10) -> Dict[str, Any]:
             or q in str(c.get("tag", "")).lower()
         ]
 
-        # Format results
         formatted = []
         for c in results[:limit]:
             formatted.append({
@@ -512,46 +577,12 @@ def search_courses_catalog(query_str: str, limit: int = 10) -> Dict[str, Any]:
         return {"results": [], "query": query_str, "count": 0}
 
 
-# def get_single_course(course_id: str) -> Optional[Dict[str, Any]]:
-#     if not is_foundry_configured():
-#         return None
-
-#     try:
-#         try:
-#             pk_value = int(course_id)
-#         except ValueError:
-#             pk_value = course_id
-
-#         with AllowBetaFeatures():
-#             client = foundry_osdk.get_client()
-#             if not hasattr(client.ontology.objects, "Courses"):
-#                 return None
-
-#             try:
-#                 raw = client.ontology.objects.Courses.get(pk_value)
-#                 return flatten_osdk_object(raw)
-#             except Exception:
-#                 pass
-
-#             if Courses is not None:
-#                 for pk_name in ["course_id", "id", "courseId"]:
-#                     if hasattr(Courses.object_type, pk_name):
-#                         prop = getattr(Courses.object_type, pk_name)
-#                         results = client.ontology.objects.Courses.where(prop == pk_value).take(1)
-#                         if results:
-#                             return flatten_osdk_object(results[0])
-#         return None
-
-#     except Exception as e:
-#         print(f"[FOUNDRY ERROR] Single course fetch failed: {str(e)}")
-#         return None
-
 ####################################################################################################################333
 
 # ═══════════════════════════════════════════════════════════════
 # COURSES — VIDEO FROM FOUNDRY MEDIA
 # ═══════════════════════════════════════════════════════════════
-
+## Single module
 def get_course_video_content(course_id: str) -> tuple:
     """Fetch video content from Foundry using OSDK media property."""
     if not is_foundry_configured():
@@ -577,7 +608,7 @@ def get_course_video_content(course_id: str) -> tuple:
         print(f"[FOUNDRY ERROR] Video content fetch failed: {str(e)}")
         return (None, None)
 
-## for multiple courses
+# # for multiple courses
 # def get_course_video_content(course_id: str, module_id: str = None) -> tuple:
 #     """Fetch video for a specific module (lesson) from Foundry."""
 #     if not is_foundry_configured():
@@ -613,6 +644,17 @@ def get_course_video_content(course_id: str) -> tuple:
 #     except Exception as e:
 #         print(f"[FOUNDRY ERROR] Video content fetch failed: {str(e)}")
 #         return (None, None)
+
+def get_valid_course_ids() -> set:
+    """Get set of valid course IDs from the Courses object."""
+    if not is_foundry_configured():
+        return set()
+
+    try:
+        raw = _take_objects("Courses", 200)
+        return {str(getattr(c, "course_id", "")) for c in raw}
+    except Exception:
+        return set()
 
 
 ########################################################################################################################
@@ -864,6 +906,8 @@ def get_single_course(course_id: str) -> Optional[Dict[str, Any]]:
 #         print(f"[FOUNDRY ERROR] Get course modules failed: {str(e)}")
 #         return {"course": {"id": course_id, "title": "", "description": "", "curriculum": []}}
 
+
+#single course
 def get_course_modules(course_id: str) -> Dict[str, Any]:
     """
     Get full course curriculum from Curriculum objects in Foundry.
@@ -968,7 +1012,7 @@ def get_course_modules(course_id: str) -> Dict[str, Any]:
         print(f"[FOUNDRY ERROR] Get course modules failed: {str(e)}")
         return {"course": {"id": course_id, "title": "", "description": "", "modules_count": 0, "curriculum": []}}
 
-## for multiple courses
+# # for multiple courses
 # def get_course_modules(course_id: str) -> Dict[str, Any]:
 #     """Get course curriculum with all modules (lessons) from Foundry."""
 #     if not is_foundry_configured():
@@ -1048,34 +1092,64 @@ def get_course_modules(course_id: str) -> Dict[str, Any]:
 #         return {"course": {"id": course_id, "title": "", "description": "", "modules_count": 0, "curriculum": []}}
  
 
+## before multiple modules
+# def _get_curriculum_for_course(course_id: str) -> List[Dict[str, Any]]:
+#     """Fetch Curriculum objects for a specific course."""
+#     try:
+#         with AllowBetaFeatures():
+#             client = foundry_osdk.get_client()
+#             if not hasattr(client.ontology.objects, "Curriculum"):
+#                 return []
 
+#             all_items = client.ontology.objects.Curriculum.take(100)
+
+#             # Filter by course_id (include unlinked items as temp fix)
+#             course_items = [
+#                 item for item in all_items
+#                 if str(getattr(item, "course_id", "") or "") == str(course_id)
+#                 or getattr(item, "course_id", None) is None  # Temp: include unlinked items
+#             ]
+#             course_items.sort(key=lambda x: getattr(x, "curriculum_id", 0))
+
+#             # Return clean data
+#             cleaned = []
+#             for item in course_items:
+#                 cleaned.append({
+#                     "id": getattr(item, "curriculum_id", None),
+#                     "course_id": str(course_id),
+#                     "title": getattr(item, "title1", None) or "Untitled Module",
+#                     "duration": getattr(item, "duration1", None) or "Self-paced",
+#                     "items": getattr(item, "items1", None),
+#                 })
+#             return cleaned
+
+#     except Exception as e:
+#         print(f"[FOUNDRY ERROR] Curriculum fetch failed: {str(e)}")
+#         return []
+
+### after multiple modules
 def _get_curriculum_for_course(course_id: str) -> List[Dict[str, Any]]:
-    """Fetch Curriculum objects for a specific course."""
+    """Build curriculum from Courses object lessons (reliable duration)."""
     try:
         with AllowBetaFeatures():
             client = foundry_osdk.get_client()
-            if not hasattr(client.ontology.objects, "Curriculum"):
-                return []
+            all_courses = client.ontology.objects.Courses.take(200)
 
-            all_items = client.ontology.objects.Curriculum.take(100)
-
-            # Filter by course_id (include unlinked items as temp fix)
-            course_items = [
-                item for item in all_items
-                if str(getattr(item, "course_id", "") or "") == str(course_id)
-                or getattr(item, "course_id", None) is None  # Temp: include unlinked items
+            course_lessons = [
+                c for c in all_courses
+                if str(getattr(c, "course_id", "")) == str(course_id)
             ]
-            course_items.sort(key=lambda x: getattr(x, "curriculum_id", 0))
+            course_lessons.sort(key=lambda c: getattr(c, "lesson_id", 0))
 
-            # Return clean data
             cleaned = []
-            for item in course_items:
+            for item in course_lessons:
                 cleaned.append({
-                    "id": getattr(item, "curriculum_id", None),
+                    "id": getattr(item, "lesson_id", None),
+                    "module_id": str(getattr(item, "lesson_id", "")),
                     "course_id": str(course_id),
-                    "title": getattr(item, "title1", None) or "Untitled Module",
+                    "title": getattr(item, "lesson_title", None) or "Untitled Module",
                     "duration": getattr(item, "duration1", None) or "Self-paced",
-                    "items": getattr(item, "items1", None),
+                    "items": None,
                 })
             return cleaned
 
@@ -1084,7 +1158,7 @@ def _get_curriculum_for_course(course_id: str) -> List[Dict[str, Any]]:
         return []
 
 
-
+# Single Course
 def get_module_content(course_id: str, module_id: str) -> Optional[Dict[str, Any]]:
     """Get module content — video proxy URL and PDF resource."""
     if not is_foundry_configured():
@@ -1113,6 +1187,48 @@ def get_module_content(course_id: str, module_id: str) -> Optional[Dict[str, Any
         print(f"[FOUNDRY ERROR] Get module content failed: {str(e)}")
         return None
 
+# ## Multiple Courses
+# def get_module_content(course_id: str, module_id: str) -> Optional[Dict[str, Any]]:
+#     """Get content for a specific module."""
+#     if not is_foundry_configured():
+#         return None
+
+#     try:
+#         with AllowBetaFeatures():
+#             client = foundry_osdk.get_client()
+#             all_courses = client.ontology.objects.Courses.take(200)
+
+#             target = next(
+#                 (c for c in all_courses
+#                  if str(getattr(c, "course_id", "")) == str(course_id)
+#                  and str(getattr(c, "lesson_id", "")) == str(module_id)),
+#                 None
+#             )
+
+#             if not target:
+#                 return None
+
+#             return {
+#                 "course_id": str(course_id),
+#                 "module_id": str(module_id),
+#                 "title": getattr(target, "lesson_title", None) or "Untitled",
+#                 "video_url": f"/api/courses/video/{course_id}/{module_id}",
+#                 "pdf_url": f"/api/courses/{course_id}/pdf/{module_id}",
+#                 "materials": [{
+#                     "id": f"m-{course_id}-{module_id}-pdf",
+#                     "title": "Module PDF Notes",
+#                     "type": "pdf",
+#                     "url": f"/api/courses/{course_id}/pdf/{module_id}",
+#                     "pdf_status": "success",
+#                 }],
+#             }
+
+#     except Exception as e:
+#         print(f"[FOUNDRY ERROR] Get module content failed: {str(e)}")
+#         return None
+
+
+# Single module
 def get_course_pdf_content(course_id: str) -> tuple:
     """Fetch PDF content from Foundry using OSDK media property."""
     if not is_foundry_configured():
@@ -1138,7 +1254,7 @@ def get_course_pdf_content(course_id: str) -> tuple:
         print(f"[FOUNDRY ERROR] PDF content fetch failed: {str(e)}")
         return (None, None)
 
-# for multiple courses
+# ##for multiple courses
 # def get_course_pdf_content(course_id: str, module_id: str = None) -> tuple:
 #     """Fetch PDF for a specific module (lesson) from Foundry."""
 #     if not is_foundry_configured():
@@ -1358,6 +1474,7 @@ def mark_course_complete(course_id: str, user_id: str) -> Dict[str, Any]:
 # COURSES — QUIZ + AUTO-COMPLETE
 # ═══════════════════════════════════════════════════════════════
 
+# Single Course
 def get_course_quiz(course_id: str, module_id: str = None) -> Dict[str, Any]:
     """Fetch quiz questions for a course from Quizes object. Returns structured quiz format."""
     empty_quiz = {
@@ -1457,8 +1574,115 @@ def get_course_quiz(course_id: str, module_id: str = None) -> Dict[str, Any]:
         print(f"[FOUNDRY ERROR] Quiz fetch failed: {str(e)}")
         return empty_quiz
 
+# ## Multiple Course
+# def get_course_quiz(course_id: str, module_id: str = None) -> Dict[str, Any]:
+#     """Fetch quiz questions for a specific module."""
+#     empty_quiz = {
+#         "quiz": {
+#             "id": f"quiz_{course_id}_{module_id or '1'}",
+#             "title": "Module Test",
+#             "path": "",
+#             "time_limit": 10,
+#             "questions": [],
+#         }
+#     }
 
+#     if not is_foundry_configured():
+#         return empty_quiz
 
+#     try:
+#         # Get module-specific title
+#         quiz_title = ""
+#         if module_id:
+#             with AllowBetaFeatures():
+#                 client = foundry_osdk.get_client()
+#                 all_courses = client.ontology.objects.Courses.take(200)
+#                 target = next(
+#                     (c for c in all_courses
+#                      if str(getattr(c, "course_id", "")) == str(course_id)
+#                      and str(getattr(c, "lesson_id", "")) == str(module_id)),
+#                     None
+#                 )
+#                 if target:
+#                     quiz_title = getattr(target, "lesson_title", "") or ""
+
+#         if not quiz_title:
+#             course = get_single_course(course_id=course_id)
+#             if course:
+#                 quiz_title = course.get("title") or course.get("course_name1", "")
+
+#         # Fetch quiz questions
+#         raw = _take_objects("Quizes", 200)
+
+#         # Filter by course_id AND module_id
+#         course_questions = []
+#         for q in raw:
+#             q_course = str(getattr(q, "course_id", ""))
+#             q_module = str(getattr(q, "module_id", getattr(q, "lesson_id", "")))
+
+#             if q_course == str(course_id):
+#                 if module_id and q_module and q_module != "None" and q_module != "":
+#                     # Quiz has module field — filter by it
+#                     if q_module == str(module_id):
+#                         course_questions.append(q)
+#                 else:
+#                     # Quiz has no module field — include all for this course
+#                     course_questions.append(q)
+
+#         # Build questions
+#         questions = []
+#         for idx, q in enumerate(course_questions):
+#             flat = flatten_osdk_object(q)
+
+#             options_raw = flat.get("multiple_choice", [])
+#             if isinstance(options_raw, str):
+#                 import json
+#                 try:
+#                     options_raw = json.loads(options_raw)
+#                 except (json.JSONDecodeError, ValueError):
+#                     options_raw = [options_raw]
+#             if not isinstance(options_raw, list):
+#                 options_raw = []
+
+#             answer_raw = flat.get("answer", [])
+#             if isinstance(answer_raw, str):
+#                 answer_raw = [answer_raw.strip()]
+#             elif not isinstance(answer_raw, list):
+#                 answer_raw = [str(answer_raw)]
+
+#             correct_letter = "a"
+#             if answer_raw:
+#                 correct_val = answer_raw[0].strip().upper()
+#                 if correct_val in ("A", "B", "C", "D", "E"):
+#                     correct_letter = correct_val.lower()
+#                 elif correct_val.isdigit():
+#                     num = int(correct_val)
+#                     letter_map = {1: "a", 2: "b", 3: "c", 4: "d", 5: "e"}
+#                     correct_letter = letter_map.get(num, "a")
+
+#             question_id = f"q_{str(idx + 1).zfill(3)}"
+#             questions.append({
+#                 "id": question_id,
+#                 "text": flat.get("question", ""),
+#                 "options": options_raw,
+#                 "correct_answer": correct_letter,
+#             })
+
+#         return {
+#             "quiz": {
+#                 "id": f"quiz_{course_id}_{module_id or '1'}",
+#                 "title": f"Module Test: {quiz_title}",
+#                 "path": quiz_title,
+#                 "time_limit": 10,
+#                 "questions": questions,
+#             }
+#         }
+
+#     except Exception as e:
+#         print(f"[FOUNDRY ERROR] Quiz fetch failed: {str(e)}")
+#         return empty_quiz
+
+# Single course
 def grade_and_complete_course(course_id: str, user_id: str, submission_data: Any, module_id: str = None) -> Dict[str, Any]:
     """
     Grade quiz using Quizes object answer key.
@@ -1575,6 +1799,134 @@ def grade_and_complete_course(course_id: str, user_id: str, submission_data: Any
             "message": f"Grading failed: {str(e)}"
         }
 
+# ## multiple modules
+# def grade_and_complete_course(course_id: str, user_id: str, submission_data: Any, module_id: str = None) -> Dict[str, Any]:
+#     """
+#     Grade quiz using Quizes object answer key.
+#     If passed (>=70%), automatically mark course as complete.
+#     Answer format: array (e.g., ["B"] or ["B", "D"])
+#     """
+#     PASSING_THRESHOLD = 70
+
+#     if not is_foundry_configured():
+#         return {"status": "success", "score": 0, "passed": False, "courseId": course_id, "total": 0, "correct": 0}
+
+#     try:
+#         # Step 1: Fetch quiz questions + answer key from Quizes object
+#         raw = _take_objects("Quizes", 200)
+
+#         # Filter by course_id AND module_id
+#         course_questions = []
+#         for q in raw:
+#             q_course = str(getattr(q, "course_id", ""))
+#             q_module = str(getattr(q, "module_id", getattr(q, "lesson_id", "")))
+
+#             if q_course == str(course_id):
+#                 if module_id and q_module and q_module != "None" and q_module != "":
+#                     if q_module == str(module_id):
+#                         course_questions.append(q)
+#                 else:
+#                     # No module field on quiz — include all (legacy)
+#                     course_questions.append(q)
+
+
+#         if not course_questions:
+#             # No quiz questions — auto-pass
+#             complete_result = mark_course_complete(course_id=course_id, user_id=user_id)
+#             return {
+#                 "status": "success",
+#                 "score": 100,
+#                 "passed": True,
+#                 "courseId": course_id,
+#                 "moduleId": module_id,
+#                 "total": 0,
+#                 "correct": 0,
+#                 "message": "No quiz available — course marked complete",
+#                 "completion": complete_result
+#             }
+
+#         # Step 2: Build answer key using quize_primary_key → answer
+#         answer_key = {}
+#         for q in course_questions:
+#             q_id = str(getattr(q, "quize_primary_key", ""))
+#             correct = getattr(q, "answer", [])
+
+#             if isinstance(correct, str):
+#                 correct = [correct.strip()]
+#             elif not isinstance(correct, list):
+#                 correct = [str(correct)]
+
+#             if q_id:
+#                 answer_key[q_id] = [a.strip().lower() for a in correct]
+
+#         # Step 3: Get student's submitted answers
+#         if hasattr(submission_data, "answers"):
+#             student_answers = submission_data.answers
+#         elif isinstance(submission_data, dict):
+#             student_answers = submission_data.get("answers", [])
+#         else:
+#             student_answers = []
+
+#         # Step 4: Grade (array comparison)
+#         total_questions = len(answer_key)
+#         correct_count = 0
+
+#         for submission in student_answers:
+#             if hasattr(submission, "questionId"):
+#                 q_id = str(submission.questionId)
+#                 student_ans = submission.answer
+#             elif isinstance(submission, dict):
+#                 q_id = str(submission.get("questionId") or "")
+#                 student_ans = submission.get("answer") or []
+#             else:
+#                 continue
+
+#             if isinstance(student_ans, str):
+#                 student_ans = [student_ans.strip()]
+#             elif not isinstance(student_ans, list):
+#                 student_ans = [str(student_ans)]
+
+#             student_set = set(a.strip().lower() for a in student_ans)
+#             correct_set = set(answer_key.get(q_id, []))
+
+#             if student_set == correct_set:
+#                 correct_count += 1
+
+#         # Step 5: Calculate score
+#         score_percent = round((correct_count / total_questions) * 100) if total_questions > 0 else 0
+#         passed = score_percent >= PASSING_THRESHOLD
+
+#         # Step 6: If passed → mark course complete
+#         completion_result = None
+#         if passed:
+#             completion_result = mark_course_complete(course_id=course_id, user_id=user_id)
+
+#         return {
+#             "status": "success",
+#             "score": score_percent,
+#             "passed": passed,
+#             "courseId": course_id,
+#             "moduleId": module_id,
+#             "total": total_questions,
+#             "correct": correct_count,
+#             "message": f"You scored {correct_count}/{total_questions} ({score_percent}%)" + (" — Course completed! 🎉" if passed else " — Try again"),
+#             "completion": completion_result
+#         }
+
+#     except Exception as e:
+#         print(f"[FOUNDRY ERROR] Quiz grading failed: {str(e)}")
+#         return {
+#             "status": "error",
+#             "score": 0,
+#             "passed": False,
+#             "courseId": course_id,
+#             "moduleId": module_id,
+#             "total": 0,
+#             "correct": 0,
+#             "message": f"Grading failed: {str(e)}"
+#         }
+
+
 # ═══════════════════════════════════════════════════════════════
 # COURSES — CERTIFICATE
 # ═══════════════════════════════════════════════════════════════
@@ -1603,7 +1955,7 @@ def get_course_certificate_content(course_id: str) -> tuple:
         return (None, None)
 
 
-##for multiple courses
+# #for multiple courses
 # def get_course_certificate_content(course_id: str) -> tuple:
 #     """Fetch certificate image from Foundry."""
 #     if not is_foundry_configured():

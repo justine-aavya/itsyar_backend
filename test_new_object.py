@@ -368,9 +368,19 @@
 #         print(f"  Team: {name} ({tid}) → event: {eid} | captain: {captain}")
 #######################################################################################################33
 
-# test_get_course.py
-from app.integrations.palantir.foundry_service import get_single_course
+# # test_get_course.py
+# from app.integrations.palantir.foundry_service import get_single_course
 
-result = get_single_course("1")
-print(f"Result: {result}")
-print(f"Type: {type(result)}")
+# result = get_single_course("1")
+# print(f"Result: {result}")
+# print(f"Type: {type(result)}")
+#######################################################################################################3333333333
+
+from app.integrations.palantir.foundry_service import _take_objects
+
+raw = _take_objects("Quizes", 200)
+for q in raw:
+    if str(getattr(q, "course_id", "")) == "1":
+        pk = getattr(q, "quize_primary_key", "?")
+        mod = getattr(q, "module_id", getattr(q, "lesson_id", "?"))
+        print(f"  PK: '{pk}' | module: {mod}")
