@@ -8,8 +8,8 @@ import urllib.parse
 
 from app.db.session import get_db
 from sqlalchemy.orm import Session
-from app.models.lesson_progress import LessonProgress
-from app.models.courses.schemas import LessonProgressRequest
+# from app.models.lesson_progress import LessonProgress
+# from app.models.courses.schemas import LessonProgressRequest
 
 from app.api.deps import get_current_user, require_student_role
 from app.models.user import User
@@ -809,125 +809,94 @@ def submit_module_quiz(
 def get_course_progress(
     course_id: str,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ):
-    """Get overall course progress."""
+    """Get enrollment status and completion info. Requires Student role."""
     try:
+        # Role gate: only Students can check course progress
         require_student_role(current_user)
-        user_id = str(current_user.id)
 
-        # Get Foundry enrollment status (original data)
-        foundry_progress = foundry_service.get_course_progress(course_id=course_id, user_id=user_id)
+        # Fetch progress from Foundry enrollment records
+        result = foundry_service.get_course_progress(course_id=course_id, user_id=str(current_user.id))
 
-        # Get video watch progress from PostgreSQL
-        curriculum = foundry_service._get_curriculum_for_course(course_id)
-        total_modules = len(curriculum) if curriculum else 1
-
-        completed_count = db.query(LessonProgress).filter(
-            LessonProgress.user_id == user_id,
-            LessonProgress.course_id == course_id,
-            LessonProgress.is_completed == True,
-        ).count()
-
-        video_percentage = round((completed_count / total_modules) * 100)
-
-        # Keep original status logic
-        foundry_status = foundry_progress.get("status", "not enrolled")
-        if foundry_status.lower() == "completed":
-            percentage = 100
-        else:
-            percentage = video_percentage
-
-        # Return — keeps ALL original keys + adds new ones
-        return {
-            "success": True,
-            "courseId": course_id,
-            "userId": user_id,
-            "status": foundry_status,
-            "percentage": percentage,
-            "total_modules": total_modules,
-            "completed_modules": completed_count,
-            "video_percentage": video_percentage,
-            "enrollment_id": foundry_progress.get("enrollment_id"),
-            "enrolled_at": foundry_progress.get("enrolled_at"),
-            "completed_at": foundry_progress.get("completed_at"),
-        }
+        # Success response
+        return {"success": True, **result}
 
     except HTTPException:
+        # Let role check 403 pass through
         raise
     except Exception as e:
         return error_response(500, f"Failed to fetch progress: {str(e)}")
 
 
-@router.post("/{course_id}/modules/{module_id}/progress", status_code=status.HTTP_200_OK)
-def update_lesson_progress(
-    course_id: str,
-    module_id: str,
-    payload: LessonProgressRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Update video watch progress for a module. Auto-completes at 90%."""
-    try:
-        # Auth: only Students can track progress
-        require_student_role(current_user)
-        user_id = str(current_user.id)
+# @router.post("/{course_id}/modules/{module_id}/progress", status_code=status.HTTP_200_OK)
+# def update_lesson_progress(
+#     course_id: str,
+#     module_id: str,
+#     payload: LessonProgressRequest,
+#     current_user: User = Depends(get_current_user),
+#     db: Session = Depends(get_db),
+# ):
+#     """Update video watch progress for a module. Auto-completes at 90%."""
+#     try:
+#         # Auth: only Students can track progress
+#         require_student_role(current_user)
+#         user_id = str(current_user.id)
 
-        # STEP 1: Find existing record or create new one
-        progress = db.query(LessonProgress).filter(
-            LessonProgress.user_id == user_id,
-            LessonProgress.course_id == course_id,
-            LessonProgress.module_id == module_id,
-        ).first()
+#         # STEP 1: Find existing record or create new one
+#         progress = db.query(LessonProgress).filter(
+#             LessonProgress.user_id == user_id,
+#             LessonProgress.course_id == course_id,
+#             LessonProgress.module_id == module_id,
+#         ).first()
 
-        if not progress:
-            progress = LessonProgress(
-                user_id=user_id,
-                course_id=course_id,
-                module_id=module_id,
-            )
-            db.add(progress)
+#         if not progress:
+#             progress = LessonProgress(
+#                 user_id=user_id,
+#                 course_id=course_id,
+#                 module_id=module_id,
+#             )
+#             db.add(progress)
 
-        # STEP 2: Update watch time
-        progress.played_seconds = payload.played_seconds
-        progress.total_seconds = payload.total_seconds
+#         # STEP 2: Update watch time
+#         progress.played_seconds = payload.played_seconds
+#         progress.total_seconds = payload.total_seconds
 
-        # STEP 3: Auto-complete if > 90% watched
-        if payload.total_seconds > 0 and (payload.played_seconds / payload.total_seconds) > 0.9:
-            progress.is_completed = True
-        elif payload.is_completed:
-            progress.is_completed = True
+#         # STEP 3: Auto-complete if > 90% watched
+#         if payload.total_seconds > 0 and (payload.played_seconds / payload.total_seconds) > 0.9:
+#             progress.is_completed = True
+#         elif payload.is_completed:
+#             progress.is_completed = True
 
-        # STEP 4: Save to database
-        db.commit()
-        db.refresh(progress)
+#         # STEP 4: Save to database
+#         db.commit()
+#         db.refresh(progress)
 
-        # STEP 5: Calculate course completion percentage
-        curriculum = foundry_service._get_curriculum_for_course(course_id)
-        total_modules = len(curriculum) if curriculum else 1
+#         # STEP 5: Calculate course completion percentage
+#         curriculum = foundry_service._get_curriculum_for_course(course_id)
+#         total_modules = len(curriculum) if curriculum else 1
 
-        completed_count = db.query(LessonProgress).filter(
-            LessonProgress.user_id == user_id,
-            LessonProgress.course_id == course_id,
-            LessonProgress.is_completed == True,
-        ).count()
+#         completed_count = db.query(LessonProgress).filter(
+#             LessonProgress.user_id == user_id,
+#             LessonProgress.course_id == course_id,
+#             LessonProgress.is_completed == True,
+#         ).count()
 
-        course_completion_percentage = round((completed_count / total_modules) * 100)
+#         course_completion_percentage = round((completed_count / total_modules) * 100)
 
-        # STEP 6: Return response
-        return {
-            "success": True,
-            "module_id": module_id,
-            "course_id": course_id,
-            "is_completed": progress.is_completed,
-            "played_seconds": progress.played_seconds,
-            "total_seconds": progress.total_seconds,
-            "course_completion_percentage": course_completion_percentage,
-            "completed_modules": completed_count,
-            "total_modules": total_modules,
-        }
+#         # STEP 6: Return response
+#         return {
+#             "success": True,
+#             "module_id": module_id,
+#             "course_id": course_id,
+#             "is_completed": progress.is_completed,
+#             "played_seconds": progress.played_seconds,
+#             "total_seconds": progress.total_seconds,
+#             "course_completion_percentage": course_completion_percentage,
+#             "completed_modules": completed_count,
+#             "total_modules": total_modules,
+#         }
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        return error_response(500, f"Progress update failed: {str(e)}")
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         return error_response(500, f"Progress update failed: {str(e)}")
