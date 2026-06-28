@@ -610,16 +610,15 @@ def search_courses_catalog(query_str: str, limit: int = 10) -> Dict[str, Any]:
 
 # for multiple courses
 def get_course_video_content(course_id: str, module_id: str = None) -> tuple:
-    """Fetch video for a specific module (lesson) from Foundry."""
+    """Fetch video for a specific module (lesson) from Foundry. Returns (stream, content_type, size)."""
     if not is_foundry_configured():
-        return (None, None)
+        return (None, None, None)
 
     try:
         with AllowBetaFeatures():
             client = foundry_osdk.get_client()
             all_courses = client.ontology.objects.Courses.take(200)
 
-            # Find the specific module (lesson_id in Foundry = module_id in our API)
             if module_id:
                 target = next(
                     (c for c in all_courses
@@ -628,22 +627,24 @@ def get_course_video_content(course_id: str, module_id: str = None) -> tuple:
                     None
                 )
             else:
-                # Default: first module for this course
                 course_items = [c for c in all_courses if str(getattr(c, "course_id", "")) == str(course_id)]
                 course_items.sort(key=lambda c: getattr(c, "lesson_id", 0))
                 target = course_items[0] if course_items else None
 
             if not target:
-                return (None, None)
+                return (None, None, None)
+
+            metadata = target.video.get_media_metadata()
+            size_bytes = metadata.size_bytes if metadata else None
 
             media_stream = target.video.get_media_content()
-            content = media_stream.read()
 
-        return (content, "video/mp4")
+        return (media_stream, "video/mp4", size_bytes)
 
     except Exception as e:
         print(f"[FOUNDRY ERROR] Video content fetch failed: {str(e)}")
-        return (None, None)
+        return (None, None, None)
+
 
 def get_valid_course_ids() -> set:
     """Get set of valid course IDs from the Courses object."""
@@ -2053,8 +2054,7 @@ def get_certificate_info(course_id: str, user_id: str, user_name: str) -> Option
 
 def get_course_progress(course_id: str, user_id: str) -> Dict[str, Any]:
     """
-    Get course progress using VanyarProgress per-module tracking.
-    Falls back to enrollment status if no module progress found.
+    Get course progress using ProgressDetails (video tracking) + VanyarEnrolment (status).
     """
     if not is_foundry_configured():
         return {"courseId": course_id, "userId": user_id, "status": "not enrolled", "percentage": 0}
@@ -2080,64 +2080,24 @@ def get_course_progress(course_id: str, user_id: str) -> Dict[str, Any]:
             enrollment = flatten_osdk_object(match[0])
             enrollment_status = enrollment.get("status", "in progress")
 
-            # Step 2: Get modules for this course (via track_id or curriculum)
-            course = get_single_course(course_id=course_id)
-            track_id = course.get("track_id") if course else None
+        # Step 2: Get video progress from ProgressDetails
+        progress_data = get_progress_details_for_course(course_id, user_id)
+        total_modules = progress_data.get("total_modules", 1)
+        completed_modules = progress_data.get("completed_modules", 0)
 
-            module_ids = []
-            if track_id:
-                # Get all modules for this track
-                all_modules = client.ontology.objects.VanyarTrainingModule.take(100)
-                track_modules = [m for m in all_modules if getattr(m, "track_id", "") == track_id]
-                module_ids = [getattr(m, "module_id", "") for m in track_modules]
-            else:
-                # Fallback: get module IDs from curriculum items
-                curriculum_items = _get_curriculum_for_course(course_id)
-                if curriculum_items:
-                    # Try to match curriculum to modules by title
-                    all_modules = client.ontology.objects.VanyarTrainingModule.take(100)
-                    for ci in curriculum_items:
-                        ci_title = ci.get("title", "").lower().strip()
-                        for m in all_modules:
-                            m_title = getattr(m, "title", "").lower().strip()
-                            if ci_title and m_title and ci_title in m_title or m_title in ci_title:
-                                module_ids.append(getattr(m, "module_id", ""))
-                                break
+        # Step 3: Calculate percentage
+        if enrollment_status.upper() == "COMPLETED":
+            percentage = 100
+        else:
+            percentage = progress_data.get("percentage", 0)
 
-            # Step 3: Get VanyarProgress for this user + these modules
-            total_modules = len(module_ids) if module_ids else 1
-            completed_modules = 0
-
-            if module_ids:
-                all_progress = client.ontology.objects.VanyarProgress.take(200)
-                user_progress = [
-                    p for p in all_progress
-                    if str(getattr(p, "user_id", "")) == str(user_id)
-                    and str(getattr(p, "module_id", "")) in module_ids
-                ]
-
-                completed_modules = len([
-                    p for p in user_progress
-                    if str(getattr(p, "status", "")).upper() == "COMPLETED"
-                ])
-
-            # Step 4: Calculate percentage
-            if enrollment_status.upper() == "COMPLETED":
-                percentage = 100
-            elif module_ids:
-                percentage = round((completed_modules / total_modules) * 100)
-            else:
-                percentage = 100 if enrollment_status.upper() == "COMPLETED" else 0
-
-            # Determine status
-            if percentage == 100:
-                status = "completed"
-            elif percentage > 0:
-                status = "in progress"
-            elif enrollment_status.upper() in ("ACTIVE", "IN PROGRESS"):
-                status = "in progress"
-            else:
-                status = enrollment_status
+        # Step 4: Determine status
+        if percentage == 100 or enrollment_status.upper() == "COMPLETED":
+            status = "completed"
+        elif percentage > 0 or enrollment_status.upper() in ("ACTIVE", "IN PROGRESS"):
+            status = "in progress"
+        else:
+            status = enrollment_status
 
         return {
             "courseId": course_id,
@@ -2195,6 +2155,143 @@ def get_course_progress(course_id: str, user_id: str) -> Dict[str, Any]:
 #     except Exception as e:
 #         print(f"[FOUNDRY ERROR] Course progress failed: {str(e)}")
 #         return {"courseId": course_id, "userId": user_id, "status": "unknown", "error": str(e)}
+
+# ═══════════════════════════════════════════════════════════════
+# PROGRESS DETAILS (FOUNDRY — VIDEO WATCH TRACKING)
+# ═══════════════════════════════════════════════════════════════
+
+def update_progress_details(course_id: str, module_id: str, user_id: str, played_seconds: float, total_seconds: float, is_complete: bool) -> Dict[str, Any]:
+    """Create or update video progress in Foundry ProgressDetails."""
+    if not is_foundry_configured():
+        return {"status": "error", "message": "Foundry not configured"}
+
+    try:
+        import inspect
+
+        with AllowBetaFeatures():
+            client = foundry_osdk.get_client()
+
+            param_values_create = {
+                "user_id1": str(user_id),
+                "course_id1": int(course_id),
+                "lesson_id": int(module_id),
+                "completed_duration": int(played_seconds),
+                "total_duration": int(total_seconds),
+                "is_complete1": is_complete,
+            }
+
+            print(f"[DEBUG] user_id being sent: {str(user_id)}")
+            # Right after getting expected params, print them:
+            sig = inspect.signature(client.ontology.actions.create_progress_details)
+            expected = list(sig.parameters.keys())
+            print(f"[DEBUG] Expected params: {expected}")
+
+            # Try CREATE first
+            try:
+                sig = inspect.signature(client.ontology.actions.create_progress_details)
+                expected = list(sig.parameters.keys())
+                kwargs = {p: param_values_create[p] for p in expected if p in param_values_create}
+                print(f"[DEBUG] Calling create_progress_details with: {kwargs}")
+                client.ontology.actions.create_progress_details(**kwargs)
+                return {"status": "success"}
+
+            except Exception as create_error:
+                # If already exists → try MODIFY
+                if "ObjectAlreadyExists" in str(create_error) or "CONFLICT" in str(create_error):
+                    print("[DEBUG] Record exists, trying modify...")
+
+                    # Find existing record
+                    all_progress = client.ontology.objects.ProgressDetails.take(200)
+                    existing = next(
+                        (p for p in all_progress
+                         if str(getattr(p, "course_id1", getattr(p, "course_id", ""))) == str(course_id)
+                         and str(getattr(p, "lesson_id", getattr(p, "module_id", ""))) == str(module_id)
+                         and str(getattr(p, "user_id1", getattr(p, "user_id", ""))) == str(user_id)),
+                        None
+                    )
+
+                    if not existing:
+                        # Try broader search
+                        existing = next(
+                            (p for p in all_progress
+                             if str(getattr(p, "lesson_id", "")) == str(module_id)),
+                            None
+                        )
+
+                    if existing:
+                        # Use lesson_id as the record identifier
+                        progress_id = int(module_id)
+
+                        sig = inspect.signature(client.ontology.actions.modify_progress_deatils)
+                        expected = list(sig.parameters.keys())
+
+                        param_values_modify = {
+                            "progress_details": progress_id,
+                            "user_id1": str(user_id),
+                            "course_id1": int(course_id),
+                            "completed_duration": int(played_seconds),
+                            "total_duration": int(total_seconds),
+                            "is_complete1": is_complete,
+                        }
+
+                        kwargs = {p: param_values_modify[p] for p in expected if p in param_values_modify}
+                        print(f"[DEBUG] Calling modify_progress_deatils with: {kwargs}")
+                        client.ontology.actions.modify_progress_deatils(**kwargs)
+                        return {"status": "success"}
+                    else:
+                        return {"status": "error", "message": "Record exists but couldn't find it to modify"}
+                else:
+                    raise create_error
+
+    except Exception as e:
+        print(f"[FOUNDRY ERROR] Progress update failed: {str(e)}")
+        return {"status": "error", "message": f"Progress update failed: {str(e)}"}
+
+
+
+def get_progress_details_for_course(course_id: str, user_id: str) -> Dict[str, Any]:
+    """Get all progress details for a user in a course (from Foundry)."""
+    if not is_foundry_configured():
+        return {"total_modules": 0, "completed_modules": 0, "percentage": 0}
+
+    try:
+        with AllowBetaFeatures():
+            client = foundry_osdk.get_client()
+
+            if not hasattr(client.ontology.objects, "ProgressDetails"):
+                return {"total_modules": 0, "completed_modules": 0, "percentage": 0}
+
+            all_progress = client.ontology.objects.ProgressDetails.take(200)
+
+            # Filter for this user + course
+            user_progress = [
+                p for p in all_progress
+                if str(getattr(p, "course_id1", getattr(p, "course_id", ""))) == str(course_id)
+            ]
+
+            # Count completed
+            completed = [
+                p for p in user_progress
+                if getattr(p, "is_complete1", getattr(p, "is_complete", False)) == True
+            ]
+
+        # Get total modules for this course
+        curriculum = _get_curriculum_for_course(course_id)
+        total_modules = len(curriculum) if curriculum else 1
+
+        completed_count = len(completed)
+        percentage = round((completed_count / total_modules) * 100) if total_modules > 0 else 0
+
+        return {
+            "total_modules": total_modules,
+            "completed_modules": completed_count,
+            "percentage": percentage,
+        }
+
+    except Exception as e:
+        print(f"[FOUNDRY ERROR] Progress details fetch failed: {str(e)}")
+        return {"total_modules": 0, "completed_modules": 0, "percentage": 0}
+
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -1,15 +1,15 @@
 from fastapi import APIRouter, Depends, Query, status, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.responses import Response as RawResponse
+from fastapi.responses import StreamingResponse
 from typing import Optional
 import requests
 import os
 import urllib.parse
 
-from app.db.session import get_db
-from sqlalchemy.orm import Session
-# from app.models.lesson_progress import LessonProgress
-# from app.models.courses.schemas import LessonProgressRequest
+from app.models.courses.schemas import TestSubmissionRequest,LessonProgressRequest
+
+
 
 from app.api.deps import get_current_user, require_student_role
 from app.models.user import User
@@ -342,21 +342,32 @@ def get_certificate_info(
 
 @router.get("/video/{course_id}/{module_id}", status_code=status.HTTP_200_OK)
 def stream_module_video(course_id: str, module_id: str):
-    """Stream video for a specific module."""
+    """Stream video for a specific module in chunks."""
     try:
-        content, content_type = foundry_service.get_course_video_content(course_id, module_id)
-        if not content:
+        media_stream, content_type, size_bytes = foundry_service.get_course_video_content(course_id, module_id)
+        if not media_stream:
             return error_response(404, "Video not found for this module")
 
-        return RawResponse(
-            content=content,
+        def chunk_generator():
+            while True:
+                chunk = media_stream.read(65536)
+                if not chunk:
+                    break
+                yield chunk
+
+        headers = {
+            "Content-Disposition": f"inline; filename=course_{course_id}_module_{module_id}_video.mp4",
+            "Content-Type": "video/mp4",
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "public, max-age=3600",
+        }
+        if size_bytes:
+            headers["Content-Length"] = str(size_bytes)
+
+        return StreamingResponse(
+            chunk_generator(),
             media_type=content_type or "video/mp4",
-            headers={
-                "Content-Disposition": f"inline; filename=course_{course_id}_module_{module_id}_video.mp4",
-                "Content-Type": "video/mp4",
-                "Accept-Ranges": "bytes",
-                "Cache-Control": "public, max-age=3600",
-            },
+            headers=headers,
         )
     except Exception as e:
         return error_response(500, f"Video streaming failed: {str(e)}")
@@ -805,27 +816,124 @@ def submit_module_quiz(
 # PROGRESS
 # ═══════════════════════════════════════════════════════════════
 
+@router.post("/{course_id}/modules/{module_id}/progress", status_code=status.HTTP_200_OK)
+def update_lesson_progress(
+    course_id: str,
+    module_id: str,
+    payload: LessonProgressRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Update video watch progress. Sends to Foundry ProgressDetails."""
+    try:
+        require_student_role(current_user)
+        user_id = str(current_user.id)
+
+        # Calculate if complete (> 90% watched)
+        is_complete = False
+        if payload.total_seconds > 0 and (payload.played_seconds / payload.total_seconds) > 0.9:
+            is_complete = True
+        elif payload.is_completed:
+            is_complete = True
+
+        # Send to Foundry
+        result = foundry_service.update_progress_details(
+            course_id=course_id,
+            module_id=module_id,
+            user_id=user_id,
+            played_seconds=payload.played_seconds,
+            total_seconds=payload.total_seconds,
+            is_complete=is_complete,
+        )
+
+        if result.get("status") == "error":
+            return error_response(500, result.get("message", "Progress update failed"))
+
+        # Get updated course completion percentage
+        progress_data = foundry_service.get_progress_details_for_course(course_id, user_id)
+
+        return {
+            "success": True,
+            "module_id": module_id,
+            "course_id": course_id,
+            "is_completed": is_complete,
+            "played_seconds": payload.played_seconds,
+            "total_seconds": payload.total_seconds,
+            "course_completion_percentage": progress_data.get("percentage", 0),
+            "completed_modules": progress_data.get("completed_modules", 0),
+            "total_modules": progress_data.get("total_modules", 0),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        return error_response(500, f"Progress update failed: {str(e)}")
+
+
+
 @router.get("/{course_id}/progress", status_code=status.HTTP_200_OK)
 def get_course_progress(
     course_id: str,
     current_user: User = Depends(get_current_user),
 ):
-    """Get enrollment status and completion info. Requires Student role."""
+    """Get overall course progress from Foundry."""
     try:
-        # Role gate: only Students can check course progress
         require_student_role(current_user)
+        user_id = str(current_user.id)
 
-        # Fetch progress from Foundry enrollment records
-        result = foundry_service.get_course_progress(course_id=course_id, user_id=str(current_user.id))
+        # Get Foundry enrollment status
+        foundry_progress = foundry_service.get_course_progress(course_id=course_id, user_id=user_id)
 
-        # Success response
-        return {"success": True, **result}
+        # Get video progress from Foundry ProgressDetails
+        progress_data = foundry_service.get_progress_details_for_course(course_id, user_id)
+
+        # Determine overall percentage
+        foundry_status = foundry_progress.get("status", "not enrolled")
+        if foundry_status.lower() == "completed":
+            percentage = 100
+        else:
+            percentage = progress_data.get("percentage", 0)
+
+        return {
+            "success": True,
+            "courseId": course_id,
+            "userId": user_id,
+            "status": foundry_status,
+            "percentage": percentage,
+            "total_modules": progress_data.get("total_modules", 0),
+            "completed_modules": progress_data.get("completed_modules", 0),
+            "video_percentage": progress_data.get("percentage", 0),
+            "enrollment_id": foundry_progress.get("enrollment_id"),
+            "enrolled_at": foundry_progress.get("enrolled_at"),
+            "completed_at": foundry_progress.get("completed_at"),
+        }
 
     except HTTPException:
-        # Let role check 403 pass through
         raise
     except Exception as e:
         return error_response(500, f"Failed to fetch progress: {str(e)}")
+
+
+# @router.get("/{course_id}/progress", status_code=status.HTTP_200_OK)
+# def get_course_progress(
+#     course_id: str,
+#     current_user: User = Depends(get_current_user),
+# ):
+#     """Get enrollment status and completion info. Requires Student role."""
+#     try:
+#         # Role gate: only Students can check course progress
+#         require_student_role(current_user)
+
+#         # Fetch progress from Foundry enrollment records
+#         result = foundry_service.get_course_progress(course_id=course_id, user_id=str(current_user.id))
+
+#         # Success response
+#         return {"success": True, **result}
+
+#     except HTTPException:
+#         # Let role check 403 pass through
+#         raise
+#     except Exception as e:
+#         return error_response(500, f"Failed to fetch progress: {str(e)}")
 
 
 # @router.post("/{course_id}/modules/{module_id}/progress", status_code=status.HTTP_200_OK)

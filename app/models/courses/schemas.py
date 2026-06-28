@@ -1,4 +1,4 @@
-from pydantic import BaseModel  #, Field, ConfigDict
+from pydantic import BaseModel,Field, ConfigDict
 from typing import List, Optional
 from datetime import datetime
 
@@ -192,9 +192,8 @@ class HistoricalTestResultResponse(BaseModel):
     lastAttemptAt: datetime
 
 
-# class LessonProgressRequest(BaseModel):
-#     played_seconds: float = Field(alias="playedSeconds")
-#     total_seconds: float = Field(alias="totalSeconds")
-#     is_completed: Optional[bool] = Field(default=False, alias="isCompleted")
-
-#     model_config = ConfigDict(populate_by_name=True)
+class LessonProgressRequest(BaseModel):
+    played_seconds: float = Field(alias="playedSeconds")
+    total_seconds: float = Field(alias="totalSeconds")
+    is_completed: Optional[bool] = Field(default=False, alias="isCompleted")
+    model_config = ConfigDict(populate_by_name=True)

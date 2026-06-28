@@ -616,7 +616,198 @@
 
 ############################################################################################################3
 
-# test_progress_details.py
+# # test_progress_details.py
+# import os, inspect
+# from dotenv import load_dotenv
+# load_dotenv()
+
+# from app.integrations.palantir.foundry_client import foundry_osdk
+# try:
+#     from foundry_sdk_runtime import AllowBetaFeatures
+# except ImportError:
+#     from contextlib import contextmanager
+#     @contextmanager
+#     def AllowBetaFeatures():
+#         yield
+
+# with AllowBetaFeatures():
+#     client = foundry_osdk.get_client()
+
+#     # Check ProgressDetails object
+#     print("=" * 60)
+#     print("PROGRESS DETAILS OBJECT:")
+#     print("=" * 60)
+#     try:
+#         items = client.ontology.objects.ProgressDetails.take(10)
+#         print(f"  Found: {len(items)} items")
+#         if items:
+#             p = items[0]
+#             for attr in sorted(dir(p)):
+#                 if attr.startswith('__'):
+#                     continue
+#                 try:
+#                     val = getattr(p, attr)
+#                     val_type = type(val).__name__
+#                     if val_type in ("method", "builtin_function_or_method", "function"):
+#                         continue
+#                     print(f"    {attr} ({val_type}) = {repr(val)[:200]}")
+#                 except Exception as e:
+#                     print(f"    {attr} = [ERROR: {e}]")
+#     except Exception as e:
+#         print(f"  ERROR: {e}")
+
+#     # Check create_progress_details action signature
+#     print("\n" + "=" * 60)
+#     print("CREATE_PROGRESS_DETAILS ACTION:")
+#     print("=" * 60)
+#     try:
+#         sig = inspect.signature(client.ontology.actions.create_progress_details)
+#         params = list(sig.parameters.keys())
+#         print(f"  Parameters: {params}")
+#     except Exception as e:
+#         print(f"  ERROR: {e}")
+
+#     # Check complete_module action signature
+#     print("\n" + "=" * 60)
+#     print("COMPLETE_MODULE ACTION:")
+#     print("=" * 60)
+#     try:
+#         sig = inspect.signature(client.ontology.actions.complete_module)
+#         params = list(sig.parameters.keys())
+#         print(f"  Parameters: {params}")
+#     except Exception as e:
+#         print(f"  ERROR: {e}")
+
+##################################################################################################################
+
+# # test_find_progress_objects.py
+# import os
+# from dotenv import load_dotenv
+# load_dotenv()
+
+# from app.integrations.palantir.foundry_client import foundry_osdk
+# try:
+#     from foundry_sdk_runtime import AllowBetaFeatures
+# except ImportError:
+#     from contextlib import contextmanager
+#     @contextmanager
+#     def AllowBetaFeatures():
+#         yield
+
+# with AllowBetaFeatures():
+#     client = foundry_osdk.get_client()
+
+#     print("ALL OBJECTS WITH 'PROGRESS' IN NAME:")
+#     for attr in sorted(dir(client.ontology.objects)):
+#         if not attr.startswith('_'):
+#             if 'progress' in attr.lower() or 'detail' in attr.lower():
+#                 print(f"  ⭐ {attr}")
+#             else:
+#                 print(f"  {attr}")
+
+#     print("\nALL ACTIONS WITH 'PROGRESS' IN NAME:")
+#     for attr in sorted(dir(client.ontology.actions)):
+#         if not attr.startswith('_'):
+#             if 'progress' in attr.lower() or 'detail' in attr.lower() or 'complete' in attr.lower():
+#                 print(f"  ⭐ {attr}")
+################################################################################################################3
+
+# # test_progress_details_v28.py
+# import os, inspect
+# from dotenv import load_dotenv
+# load_dotenv()
+
+# from app.integrations.palantir.foundry_client import foundry_osdk
+# try:
+#     from foundry_sdk_runtime import AllowBetaFeatures
+# except ImportError:
+#     from contextlib import contextmanager
+#     @contextmanager
+#     def AllowBetaFeatures():
+#         yield
+
+# with AllowBetaFeatures():
+#     client = foundry_osdk.get_client()
+
+#     # ProgressDetails object
+#     print("=" * 60)
+#     print("PROGRESS DETAILS — All Properties:")
+#     print("=" * 60)
+#     try:
+#         items = client.ontology.objects.ProgressDetails.take(10)
+#         print(f"  Found: {len(items)} items")
+#         if items:
+#             p = items[0]
+#             for attr in sorted(dir(p)):
+#                 if attr.startswith('__'):
+#                     continue
+#                 try:
+#                     val = getattr(p, attr)
+#                     val_type = type(val).__name__
+#                     if val_type in ("method", "builtin_function_or_method", "function"):
+#                         continue
+#                     print(f"    {attr} ({val_type}) = {repr(val)[:200]}")
+#                 except Exception as e:
+#                     print(f"    {attr} = [ERROR: {e}]")
+#     except Exception as e:
+#         print(f"  ERROR: {e}")
+
+#     # create_progress_details action
+#     print("\n" + "=" * 60)
+#     print("CREATE_PROGRESS_DETAILS ACTION:")
+#     print("=" * 60)
+#     try:
+#         sig = inspect.signature(client.ontology.actions.create_progress_details)
+#         print(f"  Parameters: {list(sig.parameters.keys())}")
+#     except Exception as e:
+#         print(f"  ERROR: {e}")
+
+#     # modify_progress_deatils action
+#     print("\n" + "=" * 60)
+#     print("MODIFY_PROGRESS_DEATILS ACTION:")
+#     print("=" * 60)
+#     try:
+#         sig = inspect.signature(client.ontology.actions.modify_progress_deatils)
+#         print(f"  Parameters: {list(sig.parameters.keys())}")
+#     except Exception as e:
+#         print(f"  ERROR: {e}")
+
+#     # complete_module action
+#     print("\n" + "=" * 60)
+#     print("COMPLETE_MODULE ACTION:")
+#     print("=" * 60)
+#     try:
+#         sig = inspect.signature(client.ontology.actions.complete_module)
+#         print(f"  Parameters: {list(sig.parameters.keys())}")
+#     except Exception as e:
+#         print(f"  ERROR: {e}")
+
+#     # VanyarProgress (overall)
+#     print("\n" + "=" * 60)
+#     print("VANYAR PROGRESS — All Properties:")
+#     print("=" * 60)
+#     try:
+#         items = client.ontology.objects.VanyarProgress.take(5)
+#         print(f"  Found: {len(items)} items")
+#         if items:
+#             p = items[0]
+#             for attr in sorted(dir(p)):
+#                 if attr.startswith('__'):
+#                     continue
+#                 try:
+#                     val = getattr(p, attr)
+#                     val_type = type(val).__name__
+#                     if val_type in ("method", "builtin_function_or_method", "function"):
+#                         continue
+#                     print(f"    {attr} ({val_type}) = {repr(val)[:200]}")
+#                 except Exception as e:
+#                     print(f"    {attr} = [ERROR: {e}]")
+#     except Exception as e:
+#         print(f"  ERROR: {e}")
+
+##########################################################################
+
+# test_presigned_video.py
 import os, inspect
 from dotenv import load_dotenv
 load_dotenv()
@@ -632,48 +823,86 @@ except ImportError:
 
 with AllowBetaFeatures():
     client = foundry_osdk.get_client()
+    courses = client.ontology.objects.Courses.take(5)
+    
+    # Get first course with lesson_id = 1
+    course = next((c for c in courses if getattr(c, "lesson_id", 0) == 1), courses[0])
 
-    # Check ProgressDetails object
     print("=" * 60)
-    print("PROGRESS DETAILS OBJECT:")
+    print("VIDEO MEDIA OBJECT — All Methods:")
     print("=" * 60)
-    try:
-        items = client.ontology.objects.ProgressDetails.take(10)
-        print(f"  Found: {len(items)} items")
-        if items:
-            p = items[0]
-            for attr in sorted(dir(p)):
-                if attr.startswith('__'):
-                    continue
-                try:
-                    val = getattr(p, attr)
-                    val_type = type(val).__name__
-                    if val_type in ("method", "builtin_function_or_method", "function"):
-                        continue
-                    print(f"    {attr} ({val_type}) = {repr(val)[:200]}")
-                except Exception as e:
-                    print(f"    {attr} = [ERROR: {e}]")
-    except Exception as e:
-        print(f"  ERROR: {e}")
+    video = course.video
+    for attr in sorted(dir(video)):
+        if not attr.startswith('_'):
+            print(f"  {attr}")
 
-    # Check create_progress_details action signature
     print("\n" + "=" * 60)
-    print("CREATE_PROGRESS_DETAILS ACTION:")
+    print("GET_MEDIA_REFERENCE() Result:")
     print("=" * 60)
     try:
-        sig = inspect.signature(client.ontology.actions.create_progress_details)
-        params = list(sig.parameters.keys())
-        print(f"  Parameters: {params}")
+        ref = video.get_media_reference()
+        print(f"  Type: {type(ref)}")
+        print(f"  Value: {repr(ref)[:500]}")
+        # Check if it has URL or RID
+        if hasattr(ref, '__dict__'):
+            print(f"  Dict: {ref.__dict__}")
+        if isinstance(ref, dict):
+            for k, v in ref.items():
+                print(f"    {k}: {v}")
     except Exception as e:
         print(f"  ERROR: {e}")
 
-    # Check complete_module action signature
     print("\n" + "=" * 60)
-    print("COMPLETE_MODULE ACTION:")
+    print("GET_MEDIA_METADATA() Result:")
     print("=" * 60)
     try:
-        sig = inspect.signature(client.ontology.actions.complete_module)
-        params = list(sig.parameters.keys())
-        print(f"  Parameters: {params}")
+        meta = video.get_media_metadata()
+        print(f"  Type: {type(meta)}")
+        print(f"  Value: {repr(meta)[:500]}")
+        if hasattr(meta, '__dict__'):
+            print(f"  Dict: {meta.__dict__}")
     except Exception as e:
         print(f"  ERROR: {e}")
+
+    print("\n" + "=" * 60)
+    print("GET_MEDIA_FULL_METADATA() Result:")
+    print("=" * 60)
+    try:
+        full_meta = video.get_media_full_metadata()
+        print(f"  Type: {type(full_meta)}")
+        print(f"  Value: {repr(full_meta)[:500]}")
+        if hasattr(full_meta, '__dict__'):
+            print(f"  Dict: {full_meta.__dict__}")
+    except Exception as e:
+        print(f"  ERROR: {e}")
+
+    # Check if we can construct a direct URL using the OAuth token
+    print("\n" + "=" * 60)
+    print("TRYING DIRECT MEDIA URL WITH TOKEN:")
+    print("=" * 60)
+    import requests
+    foundry_url = os.getenv("FOUNDRY_URL", "").rstrip("/")
+    ontology_rid = os.getenv("FOUNDRY_ONTOLOGY_RID", "")
+    
+    # Get fresh token
+    token_resp = requests.post(f"{foundry_url}/multipass/api/oauth2/token", data={
+        "grant_type": "client_credentials",
+        "client_id": os.getenv("FOUNDRY_CLIENT_ID"),
+        "client_secret": os.getenv("FOUNDRY_CLIENT_SECRET"),
+    }, timeout=10)
+    token = token_resp.json().get("access_token")
+    
+    # Try direct media URL with token as query param
+    test_urls = [
+        f"{foundry_url}/api/v2/ontologies/{ontology_rid}/objects/Courses/1/media/video/content?access_token={token}",
+        f"{foundry_url}/api/v2/ontologies/{ontology_rid}/objects/Courses/1/media/video/content?token={token}",
+        f"{foundry_url}/api/v2/ontologies/{ontology_rid}/objects/Courses/1/media/video/content?authorization={token}",
+    ]
+    
+    for url in test_urls:
+        resp = requests.get(url, timeout=10, stream=True)
+        ct = resp.headers.get("content-type", "")
+        print(f"  [{resp.status_code}] {ct[:30]} → ...?{url.split('?')[1][:20]}...")
+        if resp.status_code == 200 and "video" in ct:
+            print(f"    ✅ WORKS! Direct URL with token in query param!")
+            break
