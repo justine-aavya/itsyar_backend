@@ -1022,7 +1022,7 @@ def get_single_course(course_id: str) -> Optional[Dict[str, Any]]:
 
 # for multiple courses
 def get_course_modules(course_id: str) -> Dict[str, Any]:
-    """Get course curriculum with all modules (lessons) from Foundry."""
+    """Get course curriculum — each module has its own lesson."""
     if not is_foundry_configured():
         return {"course": {"id": course_id, "title": "", "description": "", "modules_count": 0, "curriculum": []}}
 
@@ -1031,7 +1031,6 @@ def get_course_modules(course_id: str) -> Dict[str, Any]:
             client = foundry_osdk.get_client()
             all_courses = client.ontology.objects.Courses.take(200)
 
-            # Get all lessons for this course
             course_lessons = [
                 c for c in all_courses
                 if str(getattr(c, "course_id", "")) == str(course_id)
@@ -1041,7 +1040,6 @@ def get_course_modules(course_id: str) -> Dict[str, Any]:
         if not course_lessons:
             return {"course": {"id": course_id, "title": "", "description": "", "modules_count": 0, "curriculum": []}}
 
-        # Course-level info from first lesson
         first = course_lessons[0]
         course_title = getattr(first, "course_name1", "") or ""
         course_desc = getattr(first, "description", "") or getattr(first, "about_the_course", "") or ""
@@ -1055,16 +1053,17 @@ def get_course_modules(course_id: str) -> Dict[str, Any]:
         except Exception:
             pass
 
-        # Build modules (each Foundry lesson = one module in our API)
-        modules = []
-        for c in course_lessons:
+        # Build curriculum — each module has its own lesson
+        curriculum = []
+        for i, c in enumerate(course_lessons):
             mid = str(getattr(c, "lesson_id", ""))
-            modules.append({
+
+            lesson = {
                 "id": mid,
                 "module_id": mid,
                 "course_id": str(course_id),
-                "title": getattr(c, "lesson_title", None) or "Untitled Module", #title of the module
-                "summary": getattr(c, "summary1", None) or getattr(c, "about_the_course", "") or "", #summary of the module
+                "title": getattr(c, "lesson_title", None) or "Untitled",
+                "summary": getattr(c, "summary1", None) or "",
                 "has_quiz": has_quiz,
                 "video_url": f"/api/courses/video/{course_id}/{mid}",
                 "pdf_url": f"/api/courses/{course_id}/pdf/{mid}",
@@ -1075,23 +1074,25 @@ def get_course_modules(course_id: str) -> Dict[str, Any]:
                     "url": f"/api/courses/{course_id}/pdf/{mid}",
                     "pdf_status": "success",
                 }],
-            })
+            }
 
-        # Build as single curriculum entry with multiple modules
-        curriculum = [{
-            "id": 1,
-            "title": course_title,
-            "duration": getattr(first, "duration1", "Self-paced"),
-            "course_id": str(course_id),
-            "lessons": modules,
-        }]
+            module_title = course_title if i == 0 else (getattr(c, "lesson_title", None) or "Untitled")
+
+            module = {
+                "id": int(mid) if mid.isdigit() else mid,
+                "title": module_title,
+                "duration": getattr(c, "duration1", None) or "Self-paced",
+                "course_id": str(course_id),
+                "lessons": [lesson],
+            }
+            curriculum.append(module)
 
         return {
             "course": {
                 "id": str(course_id),
                 "title": course_title,
                 "description": course_desc,
-                "modules_count": len(modules),
+                "modules_count": len(curriculum),
                 "curriculum": curriculum,
             }
         }

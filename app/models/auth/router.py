@@ -317,7 +317,7 @@ def google_auth(request: GoogleAuthRequest, db: Session = Depends(get_db)):
                 hashed_password=None,  # No password for Google users
                 full_name=google_name,
                 role=request.role,
-                learning_interest=request.learning_interest.value,
+                learning_interest=request.learning_interest.value if request.learning_interest else "Data Science",
                 auth_provider="google",
                 token_version=1
             )
@@ -369,7 +369,7 @@ def signup(request: SignupRequest, db: Session = Depends(get_db)):
         hashed_password=hash_password(request.password),
         full_name=request.full_name,
         role=request.role,
-        learning_interest=request.learning_interest.value,
+        learning_interest=request.learning_interest.value if request.learning_interest else "Data Science",
         token_version=1
     )
     db.add(new_user)

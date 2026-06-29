@@ -938,6 +938,16 @@ def update_lesson_progress(
     except Exception as e:
         return error_response(500, f"Progress update failed: {str(e)}")
 
+# Alias: frontend uses /lessons/ instead of /modules/
+@router.post("/{course_id}/lessons/{module_id}/progress", status_code=status.HTTP_200_OK)
+def update_lesson_progress_alias(
+    course_id: str,
+    module_id: str,
+    payload: LessonProgressRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Alias for /modules/ path — frontend compatibility."""
+    return update_lesson_progress(course_id, module_id, payload, current_user)
 
 
 @router.get("/{course_id}/progress", status_code=status.HTTP_200_OK)
