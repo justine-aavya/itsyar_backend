@@ -64,6 +64,12 @@ try:
 except ImportError:
     Quizes = None
 
+try:
+    from training_and_hackathon_sdk.ontology.objects import Timeline
+    print(f"[IMPORT] Timeline imported successfully: {Timeline}")
+except ImportError as e:
+    print(f"[IMPORT] Timeline import FAILED: {e}")
+    Timeline = None
 
 try:
     from foundry_sdk_runtime import AllowBetaFeatures
@@ -72,6 +78,7 @@ except ImportError:
     def AllowBetaFeatures():
         yield
 
+print("===== FOUNDRY_SERVICE.PY LOADED =====")
 
 # ═══════════════════════════════════════════════════════════════
 # HELPERS
@@ -2266,7 +2273,8 @@ def get_progress_details_for_course(course_id: str, user_id: str) -> Dict[str, A
             # Filter for this user + course
             user_progress = [
                 p for p in all_progress
-                if str(getattr(p, "course_id1", getattr(p, "course_id", ""))) == str(course_id)
+                if str(getattr(p, "user_id1", getattr(p, "user_id", ""))) == str(user_id)
+                and str(getattr(p, "course_id1", getattr(p, "course_id", ""))) == str(course_id)
             ]
 
             # Count completed
@@ -2347,6 +2355,48 @@ def check_event_enrollment(event_id: str, user_id: str) -> bool:
     except Exception as e:
         print(f"[FOUNDRY ERROR] Event enrollment check failed: {str(e)}")
         return False
+
+def _get_timeline_for_hackathon(hackathon_id: str) -> List[Dict[str, Any]]:
+    """Get timeline events for a hackathon."""
+    try:
+        import os
+        from training_and_hackathon_sdk import FoundryClient, ConfidentialClientAuth
+
+        hostname = os.getenv("FOUNDRY_URL", "").replace("https://", "").replace("http://", "").rstrip("/")
+        auth = ConfidentialClientAuth(
+            client_id=os.getenv("FOUNDRY_CLIENT_ID"),
+            client_secret=os.getenv("FOUNDRY_CLIENT_SECRET"),
+            scopes=["api:use-ontologies-read"]
+        )
+        fresh_client = FoundryClient(auth=auth, hostname=hostname)
+
+        with AllowBetaFeatures():
+            all_items = fresh_client.ontology.objects.Timeline.take(100)
+
+        if not all_items:
+            return []
+
+        matched = [
+            t for t in all_items
+            if str(getattr(t, "hackathon_id1", "")) == str(hackathon_id)
+        ]
+        matched.sort(key=lambda t: str(getattr(t, "date1", "") or ""))
+
+        return [
+            {
+                "label": getattr(t, "label1", ""),
+                "date": str(getattr(t, "date1", "")) if getattr(t, "date1", None) else None,
+            }
+            for t in matched
+        ]
+
+    except Exception as e:
+        print(f"[FOUNDRY ERROR] Timeline fetch failed: {str(e)}")
+        return []
+
+
+
+
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -2509,6 +2559,9 @@ def get_all_hackathons(status_filter: Optional[str] = None) -> List[Dict[str, An
         hackathons = []
 
         for h in raw:
+            raw_rules = getattr(h, "rules1", None) or []
+            rules = [r.strip().strip('"').strip("'") for r in raw_rules]
+
             item = {
                 "id": str(getattr(h, "course_id", "")),
                 "title": getattr(h, "title1", None) or "Untitled Hackathon",
@@ -2521,14 +2574,13 @@ def get_all_hackathons(status_filter: Optional[str] = None) -> List[Dict[str, An
                 "participant_count": getattr(h, "participant_count1", None),
                 "registrations": getattr(h, "registrations1", None),
                 "registrations_deadline": str(getattr(h, "registrations_deadline", "")) if getattr(h, "registrations_deadline", None) else None,
-                "rules": getattr(h, "rules1", None) or [],
+                "rules": rules,
                 "difficulty_level": getattr(h, "difficulty_level1", None),
                 "created_by": getattr(h, "created_by1", None),
                 "content_id": getattr(h, "content_id1", None),
             }
             hackathons.append(item)
 
-        # Apply status filter
         if status_filter:
             requested = [s.strip().lower() for s in status_filter.split(",")]
             hackathons = [h for h in hackathons if str(h.get("status", "")).lower() in requested]
@@ -2565,6 +2617,21 @@ def get_hackathon_by_id(hackathon_id: str) -> Optional[Dict[str, Any]]:
             # Get teams for this hackathon
             teams = _get_teams_for_hackathon(hackathon_id)
 
+            # Get timeline for this hackathon
+            timeline = _get_timeline_for_hackathon(hackathon_id)
+
+            # Clean rules (strip extra quotes and spaces)
+            raw_rules = getattr(raw, "rules1", None) or []
+            rules = [r.strip().strip('"').strip("'") for r in raw_rules]
+
+            # Parse FAQs (alternating Q/A in flat list)
+            raw_faqs = getattr(raw, "faqs1", None) or []
+            faqs = []
+            for i in range(0, len(raw_faqs) - 1, 2):
+                q = raw_faqs[i].strip().strip('"').replace('q: ', '').replace('q:', '').strip('"')
+                a = raw_faqs[i + 1].strip().strip('"')
+                faqs.append({"q": q, "a": a})
+
             return {
                 "id": str(getattr(raw, "course_id", "")),
                 "title": getattr(raw, "title1", None) or "Untitled Hackathon",
@@ -2577,10 +2644,13 @@ def get_hackathon_by_id(hackathon_id: str) -> Optional[Dict[str, Any]]:
                 "participant_count": getattr(raw, "participant_count1", None),
                 "registrations": getattr(raw, "registrations1", None),
                 "registrations_deadline": str(getattr(raw, "registrations_deadline", "")) if getattr(raw, "registrations_deadline", None) else None,
-                "rules": getattr(raw, "rules1", None) or [],
+                "rules": rules,
                 "difficulty_level": getattr(raw, "difficulty_level1", None),
                 "created_by": getattr(raw, "created_by1", None),
                 "content_id": getattr(raw, "content_id1", None),
+                "timeline": timeline,
+                "prices": [],
+                "faqs": faqs,
                 "teams": teams,
             }
 
@@ -2683,7 +2753,7 @@ def register_for_hackathon(hackathon_id: str, user_id: str) -> Dict[str, Any]:
 
 
 def get_user_team(user_id: str) -> Optional[Dict[str, Any]]:
-    """Get the user's team (where they are captain)."""
+    """Get the user's team (captain or member)."""
     if not is_foundry_configured():
         return None
 
@@ -2694,20 +2764,46 @@ def get_user_team(user_id: str) -> Optional[Dict[str, Any]]:
                 return None
 
             all_teams = client.ontology.objects.VanyarTeam.take(50)
+
+            # Check 1: Is user the captain?
             my_team = next(
                 (t for t in all_teams if str(getattr(t, "captain_user_id", "")) == str(user_id)),
                 None
             )
+            is_lead = True
+
+            # Check 2: Is user a member? (check members link)
+            if not my_team:
+                is_lead = False
+                for team in all_teams:
+                    try:
+                        members = team.members().take(50)
+                        for member in members:
+                            member_id = str(getattr(member, "user_id", getattr(member, "id", "")))
+                            if member_id == str(user_id):
+                                my_team = team
+                                break
+                    except Exception:
+                        continue
+                    if my_team:
+                        break
 
             if not my_team:
                 return None
 
+            # Get member count
+            member_count = 1
+            try:
+                members = my_team.members().take(50)
+                member_count = len(members) if members else 1
+            except Exception:
+                member_count = 1
+
             return {
                 "id": getattr(my_team, "team_id", None),
                 "name": getattr(my_team, "name", None),
-                "captain_user_id": getattr(my_team, "captain_user_id", None),
-                "event_id": getattr(my_team, "event_id", None),
-                "is_lead": True,
+                "members": member_count,
+                "is_lead": is_lead,
             }
 
     except Exception as e:

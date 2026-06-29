@@ -21,6 +21,10 @@ from app.api.deps import get_current_user
 from app.models.user import User
 from app.models.auth.schemas import UserResponse
 
+from app.core.config import settings
+print(f"[STARTUP] ACCESS_TOKEN_EXPIRE_MINUTES = {settings.ACCESS_TOKEN_EXPIRE_MINUTES}")
+
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="itsyar Architecture Engine", version="3.0.0", docs_url="/docs")

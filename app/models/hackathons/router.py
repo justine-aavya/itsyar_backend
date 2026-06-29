@@ -41,7 +41,7 @@ def list_hackathons(
 # USER'S CURRENT TEAM (must be BEFORE /{hackathon_id})
 # ═══════════════════════════════════════════════════════════════
 
-@router.get("/user/team", status_code=status.HTTP_200_OK)
+@router.get("/user/current-team", status_code=status.HTTP_200_OK)
 def get_user_team(
     current_user: User = Depends(get_current_user),
 ):

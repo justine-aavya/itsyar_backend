@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, Query, status, HTTPException
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import APIRouter, Depends, Query, status, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse, Response
 from fastapi.responses import Response as RawResponse
 from fastapi.responses import StreamingResponse
+
 from typing import Optional
 import requests
 import os
@@ -341,13 +342,45 @@ def get_certificate_info(
 # ═══════════════════════════════════════════════════════════════
 
 @router.get("/video/{course_id}/{module_id}", status_code=status.HTTP_200_OK)
-def stream_module_video(course_id: str, module_id: str):
-    """Stream video for a specific module in chunks."""
+def stream_module_video(course_id: str, module_id: str, request: Request):
+    """Stream video with range request support for instant playback."""
     try:
         media_stream, content_type, size_bytes = foundry_service.get_course_video_content(course_id, module_id)
         if not media_stream:
             return error_response(404, "Video not found for this module")
 
+        # Check for Range header
+        range_header = request.headers.get("range")
+
+        if range_header and size_bytes:
+            # Parse range: "bytes=0-65535"
+            range_str = range_header.replace("bytes=", "")
+            parts = range_str.split("-")
+            start = int(parts[0])
+            end = int(parts[1]) if parts[1] else size_bytes - 1
+
+            # Clamp end to file size
+            end = min(end, size_bytes - 1)
+            length = end - start + 1
+
+            # Seek to start position and read the range
+            media_stream.seek(start)
+            chunk = media_stream.read(length)
+
+            return Response(
+                content=chunk,
+                status_code=206,
+                media_type="video/mp4",
+                headers={
+                    "Content-Range": f"bytes {start}-{end}/{size_bytes}",
+                    "Content-Length": str(length),
+                    "Accept-Ranges": "bytes",
+                    "Content-Type": "video/mp4",
+                    "Cache-Control": "public, max-age=3600",
+                },
+            )
+
+        # No range requested — stream full file
         def chunk_generator():
             while True:
                 chunk = media_stream.read(65536)
@@ -374,22 +407,59 @@ def stream_module_video(course_id: str, module_id: str):
 
 
 @router.get("/video/{course_id}", status_code=status.HTTP_200_OK)
-def stream_course_video(course_id: str):
-    """Stream video for course (first module). Fallback."""
+def stream_course_video(course_id: str, request: Request):
+    """Stream video (first module) with range request support."""
     try:
-        content, content_type = foundry_service.get_course_video_content(course_id)
-        if not content:
+        media_stream, content_type, size_bytes = foundry_service.get_course_video_content(course_id)
+        if not media_stream:
             return error_response(404, "Video not found")
 
-        return RawResponse(
-            content=content,
+        range_header = request.headers.get("range")
+
+        if range_header and size_bytes:
+            range_str = range_header.replace("bytes=", "")
+            parts = range_str.split("-")
+            start = int(parts[0])
+            end = int(parts[1]) if parts[1] else size_bytes - 1
+            end = min(end, size_bytes - 1)
+            length = end - start + 1
+
+            media_stream.seek(start)
+            chunk = media_stream.read(length)
+
+            return Response(
+                content=chunk,
+                status_code=206,
+                media_type="video/mp4",
+                headers={
+                    "Content-Range": f"bytes {start}-{end}/{size_bytes}",
+                    "Content-Length": str(length),
+                    "Accept-Ranges": "bytes",
+                    "Content-Type": "video/mp4",
+                    "Cache-Control": "public, max-age=3600",
+                },
+            )
+
+        def chunk_generator():
+            while True:
+                chunk = media_stream.read(65536)
+                if not chunk:
+                    break
+                yield chunk
+
+        headers = {
+            "Content-Disposition": f"inline; filename=course_{course_id}_video.mp4",
+            "Content-Type": "video/mp4",
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "public, max-age=3600",
+        }
+        if size_bytes:
+            headers["Content-Length"] = str(size_bytes)
+
+        return StreamingResponse(
+            chunk_generator(),
             media_type=content_type or "video/mp4",
-            headers={
-                "Content-Disposition": f"inline; filename=course_{course_id}_video.mp4",
-                "Content-Type": "video/mp4",
-                "Accept-Ranges": "bytes",
-                "Cache-Control": "public, max-age=3600",
-            },
+            headers=headers,
         )
     except Exception as e:
         return error_response(500, f"Video streaming failed: {str(e)}")
