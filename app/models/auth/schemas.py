@@ -210,8 +210,8 @@ class SignupRequest(BaseModel):
     email: EmailStr
     password: str
     confirm_password: str = Field(alias="confirmPassword")
-    role: Optional[str] = Field(default="Student", alias="role")
-    learning_interest: Optional[LearningInterest] = Field(default=None, alias="interest")  
+    role: Optional[str] = Field(default="Student", alias="userType")
+    learning_interest: Optional[LearningInterest] = Field(default=None, alias="interest")
     accept_terms: bool = Field(alias="acceptTerms")
 
     class Config:
@@ -229,6 +229,13 @@ class SignupRequest(BaseModel):
     def passwords_match(cls, v: str, info: ValidationInfo):
         if "password" in info.data and v != info.data["password"]:
             raise ValueError("Passwords do not match")
+        return v
+    
+    @field_validator("learning_interest", mode="before")
+    @classmethod
+    def empty_string_to_none(cls, v):
+        if v == "" or v is None:
+            return None
         return v
 
     @model_validator(mode="after")
@@ -288,7 +295,9 @@ class UserResponse(BaseModel):
 
 class TokenResponse(BaseModel):
     success: bool = True
+    message: Optional[str] = None  # ← ADD THIS
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
     user: UserResponse
+

@@ -72,6 +72,11 @@ except ImportError as e:
     Timeline = None
 
 try:
+    from training_and_hackathon_sdk.ontology.objects import WinningPrize
+except ImportError:
+    WinningPrize = None
+
+try:
     from foundry_sdk_runtime import AllowBetaFeatures
 except ImportError:
     @contextmanager
@@ -2627,6 +2632,7 @@ def get_hackathon_by_id(hackathon_id: str) -> Optional[Dict[str, Any]]:
 
             # Parse FAQs (alternating Q/A in flat list)
             raw_faqs = getattr(raw, "faqs1", None) or []
+            print(f"[DEBUG FAQS] hackathon_id={hackathon_id}, faqs1={raw_faqs}")
             faqs = []
             for i in range(0, len(raw_faqs) - 1, 2):
                 q = raw_faqs[i].strip().strip('"').replace('q: ', '').replace('q:', '').strip('"')
@@ -2650,7 +2656,7 @@ def get_hackathon_by_id(hackathon_id: str) -> Optional[Dict[str, Any]]:
                 "created_by": getattr(raw, "created_by1", None),
                 "content_id": getattr(raw, "content_id1", None),
                 "timeline": timeline,
-                "prices": [],
+                "prizes": _get_prizes_for_hackathon(hackathon_id),
                 "faqs": faqs,
                 "teams": teams,
             }
@@ -2669,9 +2675,11 @@ def _get_teams_for_hackathon(hackathon_id: str) -> List[Dict[str, Any]]:
                 return []
 
             all_teams = client.ontology.objects.VanyarTeam.take(50)
+            # Match by event_id OR hackathon_id
             matched = [
                 t for t in all_teams
                 if str(getattr(t, "event_id", "")) == str(hackathon_id)
+                or str(getattr(t, "hackathon_id", "")) == str(hackathon_id)
             ]
 
             teams = []
@@ -2810,3 +2818,88 @@ def get_user_team(user_id: str) -> Optional[Dict[str, Any]]:
     except Exception as e:
         print(f"[FOUNDRY ERROR] User team fetch failed: {str(e)}")
         return None
+
+
+def _get_prizes_for_hackathon(hackathon_id: str) -> List[Dict[str, Any]]:
+    """Get winning prizes for a hackathon."""
+    try:
+        import os
+        from training_and_hackathon_sdk import FoundryClient, ConfidentialClientAuth
+
+        hostname = os.getenv("FOUNDRY_URL", "").replace("https://", "").replace("http://", "").rstrip("/")
+        auth = ConfidentialClientAuth(
+            client_id=os.getenv("FOUNDRY_CLIENT_ID"),
+            client_secret=os.getenv("FOUNDRY_CLIENT_SECRET"),
+            scopes=["api:use-ontologies-read"]
+        )
+        fresh_client = FoundryClient(auth=auth, hostname=hostname)
+
+        with AllowBetaFeatures():
+            all_items = fresh_client.ontology.objects.WinningPrize.take(100)
+
+        if not all_items:
+            return []
+
+        matched = [
+            p for p in all_items
+            if str(getattr(p, "hackathon_id", "")) == str(hackathon_id)
+        ]
+
+        prizes = []
+        for p in matched:
+            prizes.append({
+                "rank": getattr(p, "rank", ""),
+                "amount": getattr(p, "amount", ""),
+                "perk": getattr(p, "perk", ""),
+            })
+
+        rank_order = {"1st Place": 1, "2nd Place": 2, "3rd Place": 3}
+        prizes.sort(key=lambda x: rank_order.get(x.get("rank", ""), 99))
+
+        return prizes
+
+    except Exception as e:
+        print(f"[FOUNDRY ERROR] Prizes fetch failed: {str(e)}")
+        return []
+
+def submit_hackathon_solution(hackathon_id: str, user_id: str, language: str = "Python", code: str = "", notes: str = "") -> Dict[str, Any]:
+    """Submit solution for a hackathon."""
+    import uuid
+
+    if not is_foundry_configured():
+        return {"status": "success", "submission_id": str(uuid.uuid4())}
+
+    try:
+        import inspect
+
+        with AllowBetaFeatures():
+            client = foundry_osdk.get_client()
+
+            if not hasattr(client.ontology.actions, "submit_solution"):
+                return {"status": "error", "message": "submit_solution action not available"}
+
+            sig = inspect.signature(client.ontology.actions.submit_solution)
+            expected = list(sig.parameters.keys())
+            print(f"[DEBUG] submit_solution expects: {expected}")
+
+            submission_id = str(uuid.uuid4())
+
+            param_values = {
+                "hackathon_id": str(hackathon_id), "hackathonId": str(hackathon_id),
+                "user_id": str(user_id), "userId": str(user_id), "user": str(user_id),
+                "submission_id": submission_id, "submissionId": submission_id,
+                "file_name": f"submission_{user_id[:8]}_{language}.txt",
+                "file_ref": code or "No code submitted",
+                "language": language,
+                "notes": notes,
+            }
+
+            kwargs = {p: param_values[p] for p in expected if p in param_values}
+            print(f"[DEBUG] Calling submit_solution with: {kwargs}")
+            client.ontology.actions.submit_solution(**kwargs)
+
+        return {"status": "success", "submission_id": submission_id}
+
+    except Exception as e:
+        print(f"[FOUNDRY ERROR] Solution submission failed: {str(e)}")
+        return {"status": "error", "message": f"Submission failed: {str(e)}"}

@@ -3,6 +3,8 @@ from typing import Optional, List
 import uuid
 
 from jose import JWTError, jwt
+from jose.exceptions import ExpiredSignatureError
+
 import bcrypt
 from fastapi import Request, HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -170,78 +172,46 @@ def create_password_reset_token(user_id: str, current_hashed_password: str) -> s
 #     return user
 
 
-
 async def get_current_user(
-
     credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
-
     db: Session = Depends(get_db)
-
 ) -> User:
-
-    """Extracts the JWT access token from Swagger's padlock context and maps the active user."""
-
+    """Extracts and validates JWT access token."""
     credentials_exception = HTTPException(
-
         status_code=status.HTTP_401_UNAUTHORIZED,
-
         detail="Could not validate credentials",
-
         headers={"WWW-Authenticate": "Bearer"},
-
     )
-
-   
-
-    # HTTPBearer separates 'Bearer' out automatically, giving you just the raw token string
 
     token = credentials.credentials
 
-   
-
     try:
-
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-
         user_id: str = payload.get("sub")
-
         if user_id is None:
-
             raise credentials_exception
-
+    except ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Your token has been expired.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     except JWTError:
-
         raise credentials_exception
-
-
 
     # Type verification mapping fallback chain
-
     target_id = user_id
-
     try:
-
         uuid.UUID(str(user_id))
-
     except ValueError:
-
         try:
-
             target_id = int(user_id)
-
         except ValueError:
-
             target_id = user_id
 
-
-
     user = db.query(User).filter(User.id == target_id).first()
-
     if user is None:
-
         raise credentials_exception
-
-       
 
     return user
 

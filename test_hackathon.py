@@ -402,30 +402,60 @@
 #                 print(f"  ⭐ {attr} = {val}")
 ######################################################################################################
 
-import requests
-from jose import jwt
-from app.core.config import settings
-import datetime
+# import requests
+# from jose import jwt
+# from app.core.config import settings
+# import datetime
 
-# Login
-resp = requests.post("http://localhost:8000/api/auth/login", json={
-    "email": "max@example.com",
-    "password": "SecretPassword123"
-})
-data = resp.json()
-print(f"Login response keys: {data.keys()}")
+# # Login
+# resp = requests.post("http://localhost:8000/api/auth/login", json={
+#     "email": "max@example.com",
+#     "password": "SecretPassword123"
+# })
+# data = resp.json()
+# print(f"Login response keys: {data.keys()}")
 
-# Get token (camelCase from middleware)
-token = data.get("accessToken") or data.get("access_token")
-print(f"Token: {token[:50]}...")
+# # Get token (camelCase from middleware)
+# token = data.get("accessToken") or data.get("access_token")
+# print(f"Token: {token[:50]}...")
 
-# Decode
-payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-print(f"Payload: {payload}")
-print(f"Expires (exp): {payload.get('exp')}")
+# # Decode
+# payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+# print(f"Payload: {payload}")
+# print(f"Expires (exp): {payload.get('exp')}")
 
-exp_time = datetime.datetime.fromtimestamp(payload['exp'])
-now = datetime.datetime.now()
-print(f"Expires at: {exp_time}")
-print(f"Now: {now}")
-print(f"Time left: {exp_time - now}")
+# exp_time = datetime.datetime.fromtimestamp(payload['exp'])
+# now = datetime.datetime.now()
+# print(f"Expires at: {exp_time}")
+# print(f"Now: {now}")
+# print(f"Time left: {exp_time - now}")
+############################################################################################################33
+
+# test_progress_records.py
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+from app.integrations.palantir.foundry_client import foundry_osdk
+try:
+    from foundry_sdk_runtime import AllowBetaFeatures
+except ImportError:
+    from contextlib import contextmanager
+    @contextmanager
+    def AllowBetaFeatures():
+        yield
+
+MY_USER_ID = "8c9ec136-b92c-44f6-8425-cb0cf2848786"
+
+with AllowBetaFeatures():
+    client = foundry_osdk.get_client()
+    items = client.ontology.objects.ProgressDetails.take(20)
+    print(f"Total records: {len(items)}\n")
+    for p in items:
+        uid = getattr(p, "user_id1", "NONE")
+        cid = getattr(p, "course_id1", "?")
+        lid = getattr(p, "lesson_id", "?")
+        comp = getattr(p, "is_complete1", "?")
+        print(f"  user:{uid} | course:{cid} | lesson:{lid} | complete:{comp}")
+        if str(uid) == MY_USER_ID:
+            print(f"    ⭐ MATCHES YOUR USER!")

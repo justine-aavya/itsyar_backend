@@ -242,6 +242,13 @@ from google.auth.transport import requests as google_requests
 from app.core.config import settings
 from app.models.auth.schemas import GoogleAuthRequest
 
+import urllib.parse
+from fastapi.responses import RedirectResponse
+from app.core.config import settings
+import requests as http_requests
+
+import os
+import requests
     
 from app.db.session import get_db
 from app.models.user import User
@@ -269,65 +276,168 @@ def error_response(status_code: int, message: str):
 
 
 # ═══════════════════════════════════════════════════════════════
-# GOOGLE OAUTH — Sign In / Sign Up with Google
+# GOOGLE AUTH — Approach A: Redirect (GET)
 # ═══════════════════════════════════════════════════════════════
 
-@router.post("/google", response_model=TokenResponse, status_code=status.HTTP_200_OK)
-def google_auth(request: GoogleAuthRequest, db: Session = Depends(get_db)):
-    """
-    Authenticate with Google. Handles both signup and login:
-    - If email exists → login (auto-link accounts)
-    - If email doesn't exist → create new user (signup)
-    
-    Frontend sends the Google ID token obtained from Google Sign-In button.
-    """
+@router.get("/google")
+def google_login_redirect():
+    """Redirects user to Google consent page."""
+    google_auth_url = "https://accounts.google.com/o/oauth2/v2/auth"
+    backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")
+
+    params = {
+        "client_id": settings.GOOGLE_CLIENT_ID,
+        "redirect_uri": f"{backend_url}/api/auth/google/callback",
+        "response_type": "code",
+        "scope": "openid email profile",
+        "access_type": "offline",
+        "prompt": "consent",
+    }
+
+    url = f"{google_auth_url}?{urllib.parse.urlencode(params)}"
+    return RedirectResponse(url=url)
+
+
+@router.get("/google/callback")
+def google_callback(code: str, db: Session = Depends(get_db)):
+    """Google redirects here after user approves."""
     try:
-        # Step 1: Verify the Google ID token
-        # This checks the token is valid, not expired, and issued by Google
-        google_info = id_token.verify_oauth2_token(
-            request.token,
-            google_requests.Request(),
-            settings.GOOGLE_CLIENT_ID
+        backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+
+        # Exchange code for tokens
+        token_url = "https://oauth2.googleapis.com/token"
+        token_data = {
+            "code": code,
+            "client_id": settings.GOOGLE_CLIENT_ID,
+            "client_secret": settings.GOOGLE_CLIENT_SECRET,
+            "redirect_uri": f"{backend_url}/api/auth/google/callback",
+            "grant_type": "authorization_code",
+        }
+
+        token_response = requests.post(token_url, data=token_data)
+        if token_response.status_code != 200:
+            return error_response(400, "Failed to exchange Google code for tokens")
+
+        tokens = token_response.json()
+        access_token_google = tokens.get("access_token")
+
+        # Get user info from Google
+        userinfo_response = requests.get(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            headers={"Authorization": f"Bearer {access_token_google}"}
         )
 
-        # Step 2: Extract user info from Google
-        google_email = google_info.get("email", "").strip().lower()
-        google_name = google_info.get("name", "")
-        google_sub = google_info.get("sub", "")  # Google's unique user ID
+        if userinfo_response.status_code != 200:
+            return error_response(400, "Failed to get user info from Google")
+
+        google_user = userinfo_response.json()
+        google_email = google_user.get("email", "").strip().lower()
+        google_name = google_user.get("name", "")
 
         if not google_email:
-            return error_response(400, "Google account has no email address")
+            return error_response(400, "Google account has no email")
 
-        # Step 3: Check if user already exists (by email)
+        # Find or create user
         user = db.query(User).filter(User.email == google_email).first()
 
         if user:
-            # ─── EXISTING USER: Login + link Google if not already ─────
             if user.auth_provider == "local":
-                # User signed up with email/password, now using Google too
                 user.auth_provider = "both"
                 db.commit()
-
             assigned_role = user.role
-
         else:
-            # ─── NEW USER: Signup via Google ──────────────────────────
             user = User(
                 email=google_email,
-                hashed_password=None,  # No password for Google users
+                hashed_password=None,
                 full_name=google_name,
-                role=request.role,
-                learning_interest=request.learning_interest.value if request.learning_interest else "Data Science",
+                role="Student",
+                learning_interest="Data Science",
                 auth_provider="google",
                 token_version=1
             )
             db.add(user)
             db.commit()
             db.refresh(user)
-
             assigned_role = user.role
 
-            # Push to Foundry
+            foundry_service.push_user_to_foundry(
+                user_id=str(user.id),
+                email=user.email,
+                full_name=user.full_name,
+                role=user.role,
+                learning_interest=user.learning_interest or "",
+            )
+
+        # Generate JWT
+        access_token = create_access_token(data={"sub": str(user.id), "role": assigned_role})
+        refresh_token = create_refresh_token(data={"sub": str(user.id), "type": "refresh", "version": user.token_version})
+
+        # Redirect to frontend with tokens
+        redirect_params = urllib.parse.urlencode({
+            "accessToken": access_token,
+            "refreshToken": refresh_token,
+            "userId": str(user.id),
+            "email": user.email,
+            "fullName": user.full_name,
+            "role": assigned_role,
+        })
+        # Right before return RedirectResponse:
+        final_url = f"{frontend_url}/auth/callback?{redirect_params}"
+        print(f"[GOOGLE AUTH] Redirecting to: {final_url[:100]}...")
+        return RedirectResponse(url=final_url, status_code=302)
+
+        return RedirectResponse(url=f"{frontend_url}/auth/callback?{redirect_params}")
+
+    except Exception as e:
+        return error_response(500, f"Google authentication failed: {str(e)}")
+
+
+# ═══════════════════════════════════════════════════════════════
+# GOOGLE AUTH — Approach B: Token (POST)
+# ═══════════════════════════════════════════════════════════════
+
+@router.post("/google", response_model=TokenResponse, status_code=status.HTTP_200_OK)
+def google_auth(request: GoogleAuthRequest, db: Session = Depends(get_db)):
+    """
+    Authenticate with Google (token-based).
+    Frontend sends the Google ID token from popup.
+    """
+    try:
+        google_info = id_token.verify_oauth2_token(
+            request.token,
+            google_requests.Request(),
+            settings.GOOGLE_CLIENT_ID
+        )
+
+        google_email = google_info.get("email", "").strip().lower()
+        google_name = google_info.get("name", "")
+
+        if not google_email:
+            return error_response(400, "Google account has no email address")
+
+        user = db.query(User).filter(User.email == google_email).first()
+
+        if user:
+            if user.auth_provider == "local":
+                user.auth_provider = "both"
+                db.commit()
+            assigned_role = user.role
+        else:
+            user = User(
+                email=google_email,
+                hashed_password=None,
+                full_name=google_name,
+                role=request.role,
+                learning_interest=request.learning_interest.value if request.learning_interest else ("Data Science" if request.role == "Student" else None),
+                auth_provider="google",
+                token_version=1
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            assigned_role = user.role
+
             foundry_service.push_user_to_foundry(
                 user_id=str(user.id),
                 email=user.email,
@@ -336,26 +446,26 @@ def google_auth(request: GoogleAuthRequest, db: Session = Depends(get_db)):
                 learning_interest="",
             )
 
-        # Step 4: Generate JWT tokens
         access_token = create_access_token(data={"sub": str(user.id), "role": assigned_role})
         refresh_token = create_refresh_token(data={"sub": str(user.id), "type": "refresh", "version": user.token_version})
 
-        # Step 5: Return response
         response_user = UserResponse.model_validate(user)
         response_user.role = assigned_role
 
         return TokenResponse(
             success=True,
+            message="Google authentication successful",
             access_token=access_token,
             refresh_token=refresh_token,
             user=response_user
         )
 
     except ValueError as e:
-        # Invalid Google token
-        return error_response(401, f"Invalid Google token: {str(e)}")
+        return error_response(400, f"Invalid Google token: {str(e)}")
     except Exception as e:
         return error_response(500, f"Google authentication failed: {str(e)}")
+
+
 
 
 @router.post("/signup", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
@@ -369,7 +479,7 @@ def signup(request: SignupRequest, db: Session = Depends(get_db)):
         hashed_password=hash_password(request.password),
         full_name=request.full_name,
         role=request.role,
-        learning_interest=request.learning_interest.value if request.learning_interest else "Data Science",
+        learning_interest=request.learning_interest.value if request.learning_interest else ("Data Science" if request.role == "Student" else None),
         token_version=1
     )
     db.add(new_user)
@@ -390,17 +500,19 @@ def signup(request: SignupRequest, db: Session = Depends(get_db)):
 
     return TokenResponse(
         success=True,
+        message="Account created successfully",
         access_token=access_token,
         refresh_token=refresh_token,
         user=UserResponse.model_validate(new_user)
     )
 
 
+
 # @router.post("/login", response_model=TokenResponse)
 # def login(request: LoginRequest, db: Session = Depends(get_db)):
 #     user = db.query(User).filter(User.email == request.email).first()
 #     if not user or not user.hashed_password or not verify_password(request.password, user.hashed_password):
-#         return error_response(401, "Invalid email or password")
+#         return error_response(400, "Invalid email or password")
 
 #     expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
 #     assigned_role = user.role
@@ -420,7 +532,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
 
     # Check if user exists
     if not user:
-        return error_response(401, "Invalid email or password")
+        return error_response(400, "Invalid email or password")
 
     # Check if this is a Google-only user (no password set)
     if not user.hashed_password and user.auth_provider == "google":
@@ -428,7 +540,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
 
     # Verify password
     if not user.hashed_password or not verify_password(request.password, user.hashed_password):
-        return error_response(401, "Invalid email or password")
+        return error_response(400, "Invalid email or password")
 
     # Use stored role
     assigned_role = user.role
@@ -447,7 +559,14 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     response_user = UserResponse.model_validate(user)
     response_user.role = assigned_role
 
-    return TokenResponse(success=True, access_token=access_token, refresh_token=refresh_token, user=response_user)
+    return TokenResponse(
+        success=True,
+        message="Login successful",
+        access_token=access_token,
+        refresh_token=refresh_token,
+        user=response_user
+    )
+
 
 
 
@@ -459,13 +578,13 @@ def refresh_session(request: RefreshTokenRequest, db: Session = Depends(get_db))
         token_version: int = payload.get("version")
         token_type: str = payload.get("type")
         if token_type != "refresh" or user_id is None:
-            return error_response(401, "Invalid token mapping")
+            return error_response(400, "Invalid token mapping")
     except JWTError:
-        return error_response(401, "Refresh token expired or invalid")
+        return error_response(400, "Refresh token expired or invalid")
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user or user.token_version != token_version:
-        return error_response(401, "Session revoked or user invalid")
+        return error_response(400, "Session revoked or user invalid")
 
     new_access = create_access_token(data={"sub": str(user.id), "role": user.role})
     new_refresh = create_refresh_token(data={"sub": str(user.id), "type": "refresh", "version": user.token_version})

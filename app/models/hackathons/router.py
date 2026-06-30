@@ -7,6 +7,8 @@ from app.models.user import User
 from app.integrations.palantir import foundry_service
 from .schemas import HackathonRegistrationRequest
 
+from .schemas import HackathonRegistrationRequest, SubmissionRequest
+
 router = APIRouter()
 
 
@@ -164,3 +166,101 @@ def register_for_hackathon(
         raise
     except Exception as e:
         return error_response(500, f"Registration failed: {str(e)}")
+    
+
+# ═══════════════════════════════════════════════════════════════
+# TEAMS FOR A HACKATHON
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/{hackathon_id}/teams", status_code=status.HTTP_200_OK)
+def get_hackathon_teams(
+    hackathon_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Get all teams for a hackathon."""
+    try:
+        teams = foundry_service._get_teams_for_hackathon(hackathon_id)
+        return {"success": True, "teams": teams}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        return error_response(500, f"Failed to fetch teams: {str(e)}")
+
+
+@router.post("/{hackathon_id}/teams", status_code=status.HTTP_201_CREATED)
+def create_team(
+    hackathon_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Create a team for a hackathon. (Pending: create_team action not available yet)"""
+    return error_response(501, "Team creation is not yet available. Coming soon.")
+
+
+# ═══════════════════════════════════════════════════════════════
+# PROBLEM STATEMENT
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/{hackathon_id}/problem", status_code=status.HTTP_200_OK)
+def get_hackathon_problem(
+    hackathon_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Get problem statement for a hackathon."""
+    try:
+        # Check hackathon status — only show if running/active
+        hackathon = foundry_service.get_hackathon_by_id(hackathon_id)
+        if not hackathon:
+            return error_response(404, "Hackathon not found")
+
+        status_val = str(hackathon.get("status", "")).lower()
+        if status_val not in ("active", "open", "in progress", "running"):
+            return error_response(403, "Problem statement is only available when hackathon is running")
+
+        # TODO: Fetch from Foundry problem object when available
+        return error_response(501, "Problem statements not yet available in Foundry")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        return error_response(500, f"Failed to fetch problem: {str(e)}")
+
+
+# ═══════════════════════════════════════════════════════════════
+# SUBMIT SOLUTION
+# ═══════════════════════════════════════════════════════════════
+
+
+
+@router.post("/{hackathon_id}/submit", status_code=status.HTTP_200_OK)
+def submit_solution(
+    hackathon_id: str,
+    payload: SubmissionRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Submit solution for a hackathon."""
+    try:
+        result = foundry_service.submit_hackathon_solution(
+            hackathon_id=hackathon_id,
+            user_id=str(current_user.id),
+            language=payload.language,
+            code=payload.code,
+            notes=payload.notes or "",
+        )
+
+        if result.get("status") == "error":
+            return error_response(500, result.get("message", "Submission failed"))
+
+        return {
+            "success": True,
+            "submission_id": result.get("submission_id"),
+            "status": "PENDING",
+            "message": "Submission received and queued for review.",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        return error_response(500, f"Submission failed: {str(e)}")
+
+

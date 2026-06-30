@@ -14,3 +14,11 @@ class HackathonRegistrationRequest(BaseModel):
     consent_to_organizers: bool = Field(default=False, alias="consentToOrganizers")
 
     model_config = ConfigDict(populate_by_name=True)
+
+class SubmissionRequest(BaseModel):
+    language: str
+    code: str
+    notes: Optional[str] = None
+
+    model_config = ConfigDict(populate_by_name=True)
+

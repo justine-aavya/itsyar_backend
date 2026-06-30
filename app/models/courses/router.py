@@ -175,55 +175,51 @@ def get_my_courses(
 ):
     """Get courses the current user is enrolled in. Requires Student role."""
     try:
-        # Role gate: only Students have enrolled courses
         require_student_role(current_user)
 
-        # Fetch enrollments from Foundry
         result = foundry_service.get_user_enrolled_courses(user_id=str(current_user.id))
-
-        # Get valid course IDs (to filter out hackathon/event enrollments)
         valid_course_ids = foundry_service.get_valid_course_ids()
 
-        # Build enriched course list with details
         my_courses = []
         for enrollment in result.get("courses", []):
             course_id = str(enrollment.get("event_id", enrollment.get("course_id", "")))
 
-            # Skip non-numeric course IDs
             try:
                 int(course_id)
             except ValueError:
                 continue
 
-            # Skip if not a real course (might be hackathon/event enrollment)
             if course_id not in valid_course_ids:
                 continue
 
-            # Fetch full course details for title
             course_detail = foundry_service.get_single_course(course_id=course_id)
             title = "Unknown Course"
             if course_detail:
                 title = course_detail.get("title") or course_detail.get("course_name1", "Unknown Course")
 
-            # Derive progress from enrollment status
             enrollment_status = enrollment.get("status", "in progress")
-            progress = 100 if enrollment_status.lower() == "completed" else 0
+
+            # Get completion percentage from ProgressDetails (module-based)
+            progress_data = foundry_service.get_progress_details_for_course(course_id, str(current_user.id))
+            completion_percentage = progress_data.get("percentage", 0)
+
+            # Get curriculum for dynamic fields
+            curriculum = foundry_service._get_curriculum_for_course(course_id)
 
             my_courses.append({
                 "id": course_id,
                 "course_id": course_id,
-                "module_id": 1,
+                "module_id": curriculum[0]["id"] if curriculum else 1,
                 "title": title,
-                "level": "Beginner",
-                "lessons": "1 Module",
-                "progress": progress,
-                "category": "code",
+                "level": course_detail.get("level", "Beginner") if course_detail else "Beginner",
+                "lessons": f"{len(curriculum)} Module(s)",
+                "course_completion_percentage": completion_percentage,
+                "category": course_detail.get("tag", "General") if course_detail else "General",
                 "status": enrollment_status,
                 "enrolledAt": enrollment.get("enrolled_at"),
                 "completedAt": enrollment.get("completed_at"),
             })
 
-        # Success response
         return {"success": True, "courses": my_courses, "count": len(my_courses)}
 
     except HTTPException:
@@ -728,24 +724,24 @@ def get_course_modules(
     course_id: str,
     current_user: User = Depends(get_current_user),
 ):
-    """Get full course curriculum — modules, lessons, videos, materials. Requires Student role + enrollment."""
+    """Get full course curriculum. Requires Student role + enrollment."""
     try:
-        # Role gate: only Students can access course content
         require_student_role(current_user)
 
-        # Enrollment gate: must be enrolled to view modules
         status_check = foundry_service.check_user_enrollment(course_id=course_id, user_id=str(current_user.id))
         if not status_check.get("isEnrolled"):
             return error_response(403, "You must be enrolled to view modules")
 
-        # Fetch full curriculum from Foundry
         result = foundry_service.get_course_modules(course_id=course_id)
 
-        # Success response
+        # Add courseCompletionPercentage (module-based)
+        progress_data = foundry_service.get_progress_details_for_course(course_id, str(current_user.id))
+        if "course" in result:
+            result["course"]["course_completion_percentage"] = progress_data.get("percentage", 0)
+
         return {"success": True, **result}
 
     except HTTPException:
-        # Let role check 403 pass through
         raise
     except Exception as e:
         return error_response(500, f"Failed to fetch modules: {str(e)}")
@@ -966,12 +962,9 @@ def get_course_progress(
         # Get video progress from Foundry ProgressDetails
         progress_data = foundry_service.get_progress_details_for_course(course_id, user_id)
 
-        # Determine overall percentage
+        # Percentage from actual module completion (no override)
         foundry_status = foundry_progress.get("status", "not enrolled")
-        if foundry_status.lower() == "completed":
-            percentage = 100
-        else:
-            percentage = progress_data.get("percentage", 0)
+        percentage = progress_data.get("percentage", 0)
 
         return {
             "success": True,
@@ -981,7 +974,6 @@ def get_course_progress(
             "percentage": percentage,
             "total_modules": progress_data.get("total_modules", 0),
             "completed_modules": progress_data.get("completed_modules", 0),
-            "video_percentage": progress_data.get("percentage", 0),
             "enrollment_id": foundry_progress.get("enrollment_id"),
             "enrolled_at": foundry_progress.get("enrolled_at"),
             "completed_at": foundry_progress.get("completed_at"),
